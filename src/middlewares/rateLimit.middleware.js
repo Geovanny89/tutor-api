@@ -5,6 +5,24 @@ const ApiResponse = require('../utils/apiResponse');
 const { HTTP_STATUS } = require('../config/constants');
 
 /**
+ * Resolve the daily AI limit that actually applies to a user.
+ * Single source of truth: tenant override first, env default as fallback.
+ * Used by checkAiLimit and by the usage endpoint so both report the same limit.
+ * @param {object} user - authenticated user (needs tenant_id)
+ * @returns {Promise<number>} daily interaction limit
+ */
+const resolveDailyLimit = async (user) => {
+  let dailyLimit = parseInt(process.env.AI_DAILY_LIMIT) || 20;
+  if (user?.tenant_id) {
+    const tenant = await Tenant.findByPk(user.tenant_id, {
+      attributes: ['ai_daily_limit'],
+    });
+    if (tenant) dailyLimit = tenant.ai_daily_limit;
+  }
+  return dailyLimit;
+};
+
+/**
  * AI Rate Limit Middleware
  * Controls daily AI usage per user to protect free API quotas
  * 
@@ -19,13 +37,7 @@ const checkAiLimit = async (req, res, next) => {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
     // ── Get tenant-specific limit or use global default ────────────────────
-    let dailyLimit = parseInt(process.env.AI_DAILY_LIMIT) || 20;
-    if (req.user.tenant_id) {
-      const tenant = await Tenant.findByPk(req.user.tenant_id, {
-        attributes: ['ai_daily_limit'],
-      });
-      if (tenant) dailyLimit = tenant.ai_daily_limit;
-    }
+    const dailyLimit = await resolveDailyLimit(req.user);
 
     // ── Find or create today's usage record ───────────────────────────────
     const [usage, created] = await AiUsage.findOrCreate({
@@ -88,4 +100,4 @@ const incrementAiUsage = async (userId, tokensUsed = 50) => {
   }
 };
 
-module.exports = { checkAiLimit, incrementAiUsage };
+module.exports = { checkAiLimit, incrementAiUsage, resolveDailyLimit };

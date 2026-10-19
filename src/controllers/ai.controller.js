@@ -2,7 +2,7 @@
 
 const AiService = require('../services/ai.service');
 const { ConversationSession, AiUsage, Module } = require('../models');
-const { incrementAiUsage } = require('../middlewares/rateLimit.middleware');
+const { incrementAiUsage, resolveDailyLimit } = require('../middlewares/rateLimit.middleware');
 const ApiResponse = require('../utils/apiResponse');
 const { HTTP_STATUS } = require('../config/constants');
 
@@ -269,7 +269,8 @@ const AiController = {
         where: { user_id: req.user.id, date: today },
       });
 
-      const dailyLimit = parseInt(process.env.AI_DAILY_LIMIT) || 20;
+      // Same limit checkAiLimit enforces (tenant first, env as fallback)
+      const dailyLimit = await resolveDailyLimit(req.user);
       const used = usage?.interactions_count || 0;
 
       return ApiResponse.success(res, {
