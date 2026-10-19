@@ -437,7 +437,7 @@ Be clear, encouraging and practical. Keep it under 350 words.`;
   /**
    * @returns {{ correct, score, feedback, expected, tip, improvement, provider, usedAi }}
    */
-  async checkPracticeAnswer({ level = 'A1', type = 'fill_blank', sentence = '', expected = '', studentAnswer = '' }) {
+  async checkPracticeAnswer({ level = 'A1', type = 'fill_blank', sentence = '', expected = '', studentAnswer = '', hints = [] }) {
     const normalize = (text) =>
       String(text || '')
         .toLowerCase()
@@ -459,11 +459,14 @@ Be clear, encouraging and practical. Keep it under 350 words.`;
     }
 
     const cacheKey = `check:${level}:${type}:${Buffer.from(`${target}|${student}`).toString('base64').slice(0, 40)}`;
+    const hintsContext = Array.isArray(hints) && hints.length > 0 
+      ? `Hints provided to student: ${hints.join(', ')}` 
+      : '';
 
     const { data, provider, fromCache } = await this.generateJson({
       systemPrompt: AI_CONFIG.gradeSystemPrompt,
       userPrompt: fill(AI_CONFIG.practiceCheckPrompt, {
-        level, type, sentence, expected, student: studentAnswer,
+        level, type, sentence, expected, student: studentAnswer, hintsContext
       }),
       cacheKey,
       ttl: 7200,

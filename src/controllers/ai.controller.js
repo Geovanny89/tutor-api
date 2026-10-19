@@ -234,7 +234,7 @@ const AiController = {
    */
   async checkPractice(req, res) {
     try {
-      const { level, type = 'fill_blank', sentence = '', expected, student_answer } = req.body;
+      const { level, type = 'fill_blank', sentence = '', expected, student_answer, hints = [] } = req.body;
 
       if (!expected || student_answer === undefined || student_answer === null) {
         return ApiResponse.error(res, 'Expected answer and student answer are required.', HTTP_STATUS.BAD_REQUEST);
@@ -246,6 +246,7 @@ const AiController = {
         sentence,
         expected,
         studentAnswer: student_answer,
+        hints,
       });
 
       if (result.usedAi) {

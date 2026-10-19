@@ -27,6 +27,25 @@ const curriculum = [
     color_from: '#059669',
     color_to: '#10B981',
     order_index: 0,
+    evaluation: {
+      questions: [
+        {
+          id: 'q1',
+          type: 'multiple_choice',
+          question: 'How do you correctly spell the word "APPLE" in English?',
+          options: ['A-P-L-E', 'A-P-P-L-E', 'A-P-E-L', 'E-P-P-L-E'],
+          correct: 1,
+          points: 50
+        },
+        {
+          id: 'q2',
+          type: 'speaking',
+          question: 'Say: "I can spell my first name correctly."',
+          expected_words: ['i', 'can', 'spell', 'my', 'first', 'name'],
+          points: 50
+        }
+      ]
+    },
     lessons: [
       {
         title: 'El Abecedario y Cómo Deletrear',
@@ -63,6 +82,25 @@ const curriculum = [
     color_from: '#059669',
     color_to: '#10B981',
     order_index: 1,
+    evaluation: {
+      questions: [
+        {
+          id: 'q1',
+          type: 'multiple_choice',
+          question: 'Which pronoun do we use for a group of people including yourself?',
+          options: ['They', 'We', 'You', 'He'],
+          correct: 1,
+          points: 50
+        },
+        {
+          id: 'q2',
+          type: 'speaking',
+          question: 'Say: "We are students and she is our teacher."',
+          expected_words: ['we', 'are', 'students', 'she', 'teacher'],
+          points: 50
+        }
+      ]
+    },
     lessons: [
       {
         title: 'Los Pronombres de Sujeto en Inglés',
@@ -99,6 +137,25 @@ const curriculum = [
     color_from: '#059669',
     color_to: '#10B981',
     order_index: 2,
+    evaluation: {
+      questions: [
+        {
+          id: 'q1',
+          type: 'multiple_choice',
+          question: 'What is the correct negative form of "She is ready"?',
+          options: ['She not is ready', 'She are not ready', 'She isn\'t ready', 'She am not ready'],
+          correct: 2,
+          points: 50
+        },
+        {
+          id: 'q2',
+          type: 'speaking',
+          question: 'Say: "I am a student and I am not tired."',
+          expected_words: ['i', 'am', 'student', 'not', 'tired'],
+          points: 50
+        }
+      ]
+    },
     lessons: [
       {
         title: 'AM, IS, ARE: Afirmativo, Negativo y Preguntas',
@@ -135,6 +192,25 @@ const curriculum = [
     color_from: '#059669',
     color_to: '#10B981',
     order_index: 3,
+    evaluation: {
+      questions: [
+        {
+          id: 'q1',
+          type: 'multiple_choice',
+          question: 'When do we use "AN" instead of "A"?',
+          options: ['Before a consonant sound', 'Before a vowel sound', 'Only for plural objects', 'For objects that are far away'],
+          correct: 1,
+          points: 50
+        },
+        {
+          id: 'q2',
+          type: 'speaking',
+          question: 'Say: "This is an apple and those are my keys."',
+          expected_words: ['this', 'is', 'an', 'apple', 'those', 'are', 'keys'],
+          points: 50
+        }
+      ]
+    },
     lessons: [
       {
         title: 'A vs AN y This / That / These / Those',
@@ -170,6 +246,25 @@ const curriculum = [
     color_from: '#059669',
     color_to: '#10B981',
     order_index: 4,
+    evaluation: {
+      questions: [
+        {
+          id: 'q1',
+          type: 'multiple_choice',
+          question: 'Which auxiliary verb do we use for questions with "She" in the Present Simple?',
+          options: ['Do', 'Does', 'Is', 'Are'],
+          correct: 1,
+          points: 50
+        },
+        {
+          id: 'q2',
+          type: 'speaking',
+          question: 'Say: "She works every day and she speaks English well."',
+          expected_words: ['works', 'every', 'day', 'speaks', 'english'],
+          points: 50
+        }
+      ]
+    },
     lessons: [
       {
         title: 'Rutinas y la Regla de la Tercera Persona',
@@ -206,6 +301,25 @@ const curriculum = [
     color_from: '#059669',
     color_to: '#10B981',
     order_index: 5,
+    evaluation: {
+      questions: [
+        {
+          id: 'q1',
+          type: 'multiple_choice',
+          question: 'What is the possessive adjective for "WE"?',
+          options: ['Our', 'Their', 'Your', 'My'],
+          correct: 0,
+          points: 50
+        },
+        {
+          id: 'q2',
+          type: 'speaking',
+          question: 'Say: "This is my house and that is their car."',
+          expected_words: ['this', 'my', 'house', 'that', 'their', 'car'],
+          points: 50
+        }
+      ]
+    },
     lessons: [
       {
         title: 'Adjetivos Posesivos y Posesivo \'S',
@@ -1357,20 +1471,25 @@ async function seed() {
       }
 
       // Create Evaluation for each module
-      await Evaluation.create({
-        module_id: createdMod.id,
-        title: `Evaluación: ${modData.name}`,
-        instructions: `Demuestra tu dominio de los conceptos de este módulo para certificarlo y avanzar.`,
-        questions: [
+      const evalTitle = `Final Evaluation: ${modData.name}`;
+      const evalInstructions = `Demonstrate your mastery of the concepts from this module to certify it and advance.`;
+      
+      let evalQuestions = [];
+      
+      if (modData.evaluation && modData.evaluation.questions) {
+        evalQuestions = modData.evaluation.questions;
+      } else {
+        // Improved generic English fallback for modules without specific evaluation data
+        evalQuestions = [
           {
             id: 'q1',
             type: 'multiple_choice',
-            question: `¿Cuál es el concepto central que aprendiste en ${modData.name}?`,
+            question: `Which of the following is a key concept covered in the module "${modData.name}"?`,
             options: [
-              'Aplicación práctica de la regla gramatical y pronunciación en conversación',
-              'Memorizar sin hablar',
-              'Traducir palabra por palabra al español',
-              'Ninguna de las anteriores',
+              'Practical application of grammar and pronunciation in real conversation',
+              'Memorizing words without speaking',
+              'Translating every word literally to Spanish',
+              'None of the above'
             ],
             correct: 0,
             points: 50,
@@ -1378,11 +1497,18 @@ async function seed() {
           {
             id: 'q2',
             type: 'speaking',
-            question: `Pronuncia en voz alta la frase clave de práctica de este módulo.`,
-            expected_words: ['english', 'practice'],
+            question: `Please say the following sentence clearly: "I am practicing the concepts from module ${modData.order_index + 1}."`,
+            expected_words: ['practicing', 'concepts', 'module'],
             points: 50,
           },
-        ],
+        ];
+      }
+
+      await Evaluation.create({
+        module_id: createdMod.id,
+        title: evalTitle,
+        instructions: evalInstructions,
+        questions: evalQuestions,
         total_points: 100,
         min_pass_score: 70,
         time_limit_minutes: 15,

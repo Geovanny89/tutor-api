@@ -153,9 +153,19 @@ CEFR level: {level}
 Exercise type: {type}
 Instruction/sentence: "{sentence}"
 Expected answer: "{expected}"
+{hintsContext}
 Student's answer: "{student}"
 
-Consider acceptable any tense-consistent, spelling-tolerant variant (case, accents, contractions like "don't" = "do not").
+CRITICAL EVALUATION RULES:
+1. SEMANTIC FLEXIBILITY: For "fill_blank" or "technical", if the student's answer is a valid, grammatically correct English word or phrase that makes sense in the sentence, mark it as "correct": true with a high score (85-100), EVEN IF it is not the exact "{expected}" word.
+   - Example: Sentence "I like to eat ____", Expected "apple", Student "fruit" -> CORRECT (100).
+   - Example: Sentence "He ____ to the gym", Expected "goes", Student "went" -> CORRECT (100, past tense is valid unless context forbids).
+2. SPELLING & TYPOS: Be tolerant of minor typos or spelling errors that don't change the word's meaning (e.g. "beatiful" instead of "beautiful").
+3. CASE & PUNCTUATION: Ignore case and common punctuation.
+4. FEEDBACK: If the answer is correct but different from the expected one, mention it in the feedback: "¡Correcto! También podrías usar '{expected}'."
+5. HINTS: If hints were provided, check if the student followed them. If the answer is correct but ignores a restrictive hint (like "Starts with A"), you may mark it correct but mention the hint in the feedback.
+
+
 Answer with this exact JSON:
 {
   "correct": true,
