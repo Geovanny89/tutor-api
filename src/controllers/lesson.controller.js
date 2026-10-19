@@ -94,14 +94,83 @@ const LessonController = {
   },
 
   /**
+   * GET /api/lessons?module_id=xxx (admin)
+   * List lessons of a module including unpublished ones
+   */
+  async list(req, res) {
+    try {
+      const where = {};
+      if (req.query.module_id) where.module_id = req.query.module_id;
+
+      const lessons = await Lesson.findAll({
+        where,
+        order: [['module_id', 'ASC'], ['order_index', 'ASC']],
+        attributes: [
+          'id', 'module_id', 'title', 'subtitle', 'order_index', 'icon',
+          'duration_minutes', 'xp_reward', 'requires_voice', 'is_published',
+        ],
+      });
+
+      return ApiResponse.success(res, lessons, 'Lessons retrieved.');
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to retrieve lessons.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
    * POST /api/lessons (super_admin only)
    * Create a new lesson
    */
   async create(req, res) {
     try {
-      const lesson = await Lesson.create(req.body);
-      // Update module total_lessons count
-      await Module.increment('total_lessons', { where: { id: lesson.module_id } });
+      const {
+        module_id,
+        title,
+        subtitle,
+        order_index,
+        content,
+        duration_minutes,
+        xp_reward,
+        icon,
+        requires_voice,
+        is_published,
+      } = req.body;
+
+      if (!module_id) return ApiResponse.error(res, 'module_id is required.', HTTP_STATUS.BAD_REQUEST);
+      if (!title || !String(title).trim()) {
+        return ApiResponse.error(res, 'Lesson title is required.', HTTP_STATUS.BAD_REQUEST);
+      }
+
+      const module = await Module.findByPk(module_id);
+      if (!module) return ApiResponse.error(res, 'Module not found.', HTTP_STATUS.NOT_FOUND);
+
+      let nextOrder = order_index !== undefined ? Number(order_index) : null;
+      if (nextOrder === null || Number.isNaN(nextOrder)) {
+        const last = await Lesson.findOne({
+          where: { module_id },
+          order: [['order_index', 'DESC']],
+          attributes: ['order_index'],
+        });
+        nextOrder = last ? last.order_index + 1 : 1;
+      }
+
+      const lesson = await Lesson.create({
+        module_id,
+        title: String(title).trim(),
+        subtitle: subtitle || null,
+        order_index: nextOrder,
+        content: content || {},
+        ...(duration_minutes !== undefined && { duration_minutes: Number(duration_minutes) }),
+        ...(xp_reward !== undefined && { xp_reward: Number(xp_reward) }),
+        ...(icon && { icon }),
+        ...(requires_voice !== undefined && { requires_voice }),
+        ...(is_published !== undefined && { is_published }),
+      });
+
+      // Keep module counter in sync
+      const lessonCount = await Lesson.count({ where: { module_id, is_published: true } });
+      await module.update({ total_lessons: lessonCount });
+
       CacheService.flush();
       return ApiResponse.success(res, lesson, 'Lesson created.', HTTP_STATUS.CREATED);
     } catch (error) {
@@ -116,11 +185,53 @@ const LessonController = {
     try {
       const lesson = await Lesson.findByPk(req.params.id);
       if (!lesson) return ApiResponse.error(res, 'Lesson not found.', HTTP_STATUS.NOT_FOUND);
-      await lesson.update(req.body);
+
+      const {
+        title, subtitle, order_index, content,
+        duration_minutes, xp_reward, icon, requires_voice, is_published,
+      } = req.body;
+
+      await lesson.update({
+        ...(title && { title: String(title).trim() }),
+        ...(subtitle !== undefined && { subtitle }),
+        ...(order_index !== undefined && { order_index: Number(order_index) }),
+        ...(content !== undefined && { content }),
+        ...(duration_minutes !== undefined && { duration_minutes: Number(duration_minutes) }),
+        ...(xp_reward !== undefined && { xp_reward: Number(xp_reward) }),
+        ...(icon && { icon }),
+        ...(requires_voice !== undefined && { requires_voice }),
+        ...(is_published !== undefined && { is_published }),
+      });
+
       CacheService.flush();
       return ApiResponse.success(res, lesson, 'Lesson updated.');
     } catch (error) {
-      return ApiResponse.error(res, 'Failed to update lesson.', HTTP_STATUS.INTERNAL_ERROR);
+      return ApiResponse.error(res, 'Failed to update lesson.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * DELETE /api/lessons/:id (super_admin only)
+   */
+  async remove(req, res) {
+    try {
+      const lesson = await Lesson.findByPk(req.params.id);
+      if (!lesson) return ApiResponse.error(res, 'Lesson not found.', HTTP_STATUS.NOT_FOUND);
+
+      const moduleId = lesson.module_id;
+      await UserProgress.destroy({ where: { lesson_id: lesson.id }, force: true });
+      await lesson.destroy({ force: true });
+
+      const module = await Module.findByPk(moduleId);
+      if (module) {
+        const lessonCount = await Lesson.count({ where: { module_id: moduleId, is_published: true } });
+        await module.update({ total_lessons: lessonCount });
+      }
+
+      CacheService.flush();
+      return ApiResponse.success(res, { id: lesson.id }, `Lesson "${lesson.title}" deleted.`);
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to delete lesson.', HTTP_STATUS.INTERNAL_ERROR, error.message);
     }
   },
 };

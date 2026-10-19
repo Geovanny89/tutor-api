@@ -13,6 +13,7 @@ const { ROLES } = require('./src/config/constants');
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 const authRoutes = require('./src/routes/auth.routes');
+const adminRoutes = require('./src/routes/admin.routes');
 const moduleRoutes = require('./src/routes/module.routes');
 const lessonRoutes = require('./src/routes/lesson.routes');
 const evaluationRoutes = require('./src/routes/evaluation.routes');
@@ -72,6 +73,7 @@ app.get('/health', (req, res) => {
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/modules', moduleRoutes);
 app.use('/api/lessons', lessonRoutes);
 app.use('/api/evaluations', evaluationRoutes);

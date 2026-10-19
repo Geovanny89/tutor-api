@@ -9,7 +9,8 @@
  * Bloque 5: Dominio Profesional y Matices (Nivel C1/C2) - 4 Módulos
  */
 
-require('dotenv').config({ path: '../.env' });
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { sequelize, Module, Lesson, Evaluation, User, Tenant } = require('../src/models');
 const { ROLES, LEVELS } = require('../src/config/constants');
 

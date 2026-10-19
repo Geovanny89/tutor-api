@@ -12,5 +12,6 @@ router.get('/module/:moduleId', EvaluationController.getByModule);
 router.post('/:id/submit', EvaluationController.submit);
 
 router.post('/', ...requireSuperAdmin, EvaluationController.create);
+router.delete('/:id', ...requireSuperAdmin, EvaluationController.remove);
 
 module.exports = router;

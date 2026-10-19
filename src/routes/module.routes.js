@@ -16,5 +16,6 @@ router.get('/:id', ModuleController.getById);
 // Admin only
 router.post('/', ...requireSuperAdmin, ModuleController.create);
 router.put('/:id', ...requireSuperAdmin, ModuleController.update);
+router.delete('/:id', ...requireSuperAdmin, ModuleController.remove);
 
 module.exports = router;

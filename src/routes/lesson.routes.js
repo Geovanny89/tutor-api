@@ -11,7 +11,9 @@ router.use(authenticate);
 router.get('/:id', LessonController.getById);
 router.post('/:id/complete', LessonController.complete);
 
+router.get('/', ...requireSuperAdmin, LessonController.list);
 router.post('/', ...requireSuperAdmin, LessonController.create);
 router.put('/:id', ...requireSuperAdmin, LessonController.update);
+router.delete('/:id', ...requireSuperAdmin, LessonController.remove);
 
 module.exports = router;

@@ -185,13 +185,41 @@ const EvaluationController = {
 
   /**
    * POST /api/evaluations (super_admin only)
+   * Creates the module evaluation. If the module already has one, it is updated.
    */
   async create(req, res) {
     try {
+      const { module_id } = req.body;
+      if (!module_id) return ApiResponse.error(res, 'module_id is required.', HTTP_STATUS.BAD_REQUEST);
+
+      const existing = await Evaluation.findOne({ where: { module_id } });
+
+      if (existing) {
+        await existing.update(req.body);
+        return ApiResponse.success(res, existing, 'Evaluation updated.');
+      }
+
       const evaluation = await Evaluation.create(req.body);
       return ApiResponse.success(res, evaluation, 'Evaluation created.', HTTP_STATUS.CREATED);
     } catch (error) {
-      return ApiResponse.error(res, 'Failed to create evaluation.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+      return ApiResponse.error(res, 'Failed to save evaluation.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * DELETE /api/evaluations/:id (super_admin only)
+   */
+  async remove(req, res) {
+    try {
+      const evaluation = await Evaluation.findByPk(req.params.id);
+      if (!evaluation) return ApiResponse.error(res, 'Evaluation not found.', HTTP_STATUS.NOT_FOUND);
+
+      await UserProgress.destroy({ where: { evaluation_id: evaluation.id }, force: true });
+      await evaluation.destroy({ force: true });
+
+      return ApiResponse.success(res, { id: evaluation.id }, 'Evaluation deleted.');
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to delete evaluation.', HTTP_STATUS.INTERNAL_ERROR, error.message);
     }
   },
 };
