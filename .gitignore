@@ -1,0 +1,35 @@
+# ==========================================
+# Backend API .gitignore
+# ==========================================
+
+# Dependencies
+node_modules/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# SQLite & Local Databases
+*.sqlite
+*.sqlite3
+*.db
+database.sqlite
+
+# Logs & Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
