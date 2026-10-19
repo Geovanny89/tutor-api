@@ -1426,7 +1426,7 @@ async function seed() {
         name: 'KDice English Academy',
         slug: 'kdice-main',
         primary_color: '#059669',
-        ai_daily_limit: 20,
+        ai_daily_limit: 50,
         is_active: true,
         max_students: 1000,
       },

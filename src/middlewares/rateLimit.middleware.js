@@ -12,7 +12,7 @@ const { HTTP_STATUS } = require('../config/constants');
  * @returns {Promise<number>} daily interaction limit
  */
 const resolveDailyLimit = async (user) => {
-  let dailyLimit = parseInt(process.env.AI_DAILY_LIMIT) || 20;
+  let dailyLimit = parseInt(process.env.AI_DAILY_LIMIT) || 50;
   if (user?.tenant_id) {
     const tenant = await Tenant.findByPk(user.tenant_id, {
       attributes: ['ai_daily_limit'],
