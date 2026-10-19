@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "seed": "node seeds/seed.js"
+    "seed": "node seeds/seed.js",
+    "db:reset": "node seeds/reset.js && node seeds/seed.js"
   },
   "keywords": [
     "english",
