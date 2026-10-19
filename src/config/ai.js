@@ -131,20 +131,21 @@ Module topic: "{topic}"
 {extraContext}
 
 Allowed exercise types:
-- "fill_blank": complete the sentence. The "sentence" MUST be in English with the gap written as "____". Provide the English "answer", a short "explanation" in Spanish and 3 "hints" in English.
+- "fill_blank": complete the sentence. The "sentence" MUST be in English with the gap written as "____". Provide the English "answer", a short "explanation" in Spanish, 3 "hints" in English (descriptive clues), and 4 "options" in English (one of which MUST be the correct "answer").
 - "pronunciation": the student must read an English phrase aloud. Provide "sentence" in English, "focus" in English, and "tip" in Spanish.
-- "technical": professional English. Provide "sentence" in English with a visible gap "____", English "answer", Spanish "translation" and English "context".
+- "technical": professional English. Provide "sentence" in English with a visible gap "____", English "answer", Spanish "translation", English "context", and 4 "options" in English (one of which MUST be the correct "answer").
 - "vocabulary": provide English "word", Spanish "translation", English "example" sentence and English "question".
 
 Rules:
 - Every "answer" must be a SINGLE word or a very short phrase in English.
+- For "fill_blank" and "technical", always provide "options" as an array of 4 strings. One of them must be the correct answer.
 - Sentences must be useful in real life, age-appropriate and never offensive.
 - Progressive difficulty: start easy, increase within the set.
 - Never repeat the same answer twice inside one set.
 - Target language is ALWAYS English. Spanish is ONLY for metadata/help.
 
 Answer ONLY with this JSON shape:
-{ "title": "short topic title", "exercises": [ { "type": "...", "sentence": "...", "answer": "...", "hints": ["..."], "explanation": "...", "tip": "...", "word": "...", "translation": "...", "example": "...", "question": "...", "context": "...", "focus": "..." } ] }
+{ "title": "short topic title", "exercises": [ { "type": "...", "sentence": "...", "answer": "...", "hints": ["..."], "options": ["..."], "explanation": "...", "tip": "...", "word": "...", "translation": "...", "example": "...", "question": "...", "context": "...", "focus": "..." } ] }
 Only include the fields that apply to each exercise type.`,
 
   // ─── Evaluate a practice answer (fill_blank / technical / vocabulary) ─────

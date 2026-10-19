@@ -396,7 +396,8 @@ Be clear, encouraging and practical. Keep it under 350 words.`;
       ? 'Mix the exercise types freely among the allowed ones below for extra variety.'
       : `ALL ${safeCount} exercises MUST be of type "${safeType}". Do not use any other type.`;
 
-    const cacheKey = `practice:${level}:${safeType}:${safeCount}:${Buffer.from(topic).toString('base64').slice(0, 24)}`;
+    // v2 cache key to force refresh after schema update (added options field)
+    const cacheKey = `practice_v2:${level}:${safeType}:${safeCount}:${Buffer.from(topic).toString('base64').slice(0, 24)}`;
 
     const { data, provider, fromCache, tokensUsed } = await this.generateJson({
       systemPrompt: AI_CONFIG.practiceSystemPrompt,
