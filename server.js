@@ -19,12 +19,21 @@ const lessonRoutes = require('./src/routes/lesson.routes');
 const evaluationRoutes = require('./src/routes/evaluation.routes');
 const aiRoutes = require('./src/routes/ai.routes');
 const progressRoutes = require('./src/routes/progress.routes');
+const academyRoutes = require('./src/routes/academy.routes');
+const professorRoutes = require('./src/routes/professor.routes');
+const messageRoutes = require('./src/routes/message.routes');
+const adRoutes = require('./src/routes/ad.routes');
+const certificateRoutes = require('./src/routes/certificate.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const path = require('path');
 
 // ─── Security Middleware ──────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+// ─── Static Files ─────────────────────────────────────────────────────────────
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // CORS - Allow frontend
 app.use(cors({
@@ -79,6 +88,11 @@ app.use('/api/lessons', lessonRoutes);
 app.use('/api/evaluations', evaluationRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/progress', progressRoutes);
+app.use('/api/academies', academyRoutes);
+app.use('/api/professor', professorRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/ads', adRoutes);
+app.use('/api/certificates', certificateRoutes);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 app.use('*', (req, res) => {

@@ -2,6 +2,7 @@
 
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
+const { AGE_RANGES, SUBJECTS } = require('../config/constants');
 
 /**
  * Lesson Model
@@ -18,6 +19,36 @@ const Lesson = sequelize.define('Lesson', {
     type: DataTypes.UUID,
     allowNull: false,
     references: { model: 'modules', key: 'id' },
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'null = lección global (plantilla); con valor = lección propia de una academia',
+  },
+  age_range: {
+    type: DataTypes.ENUM(...Object.values(AGE_RANGES)),
+    allowNull: true,
+    comment: 'Segmento de edad al que apunta la lección',
+  },
+  subject: {
+    type: DataTypes.ENUM(...Object.values(SUBJECTS)),
+    allowNull: true,
+    comment: 'Materia de la lección',
+  },
+  situation: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Escenario/situación para la IA (columna CSV: situacion)',
+  },
+  teacher_prompt: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Prompt/instrucción adicional definida por el profesor (CSV: prompt_profesor)',
+  },
+  source: {
+    type: DataTypes.ENUM('global', 'csv', 'manual'),
+    defaultValue: 'manual',
+    comment: 'Origen de la lección para trazabilidad',
   },
   title: {
     type: DataTypes.STRING(150),

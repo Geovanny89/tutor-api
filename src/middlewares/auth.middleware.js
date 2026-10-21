@@ -3,7 +3,7 @@
 const jwt = require('jsonwebtoken');
 const ApiResponse = require('../utils/apiResponse');
 const { User } = require('../models');
-const { ROLES, HTTP_STATUS } = require('../config/constants');
+const { ROLES, STAFF_ROLES, HTTP_STATUS } = require('../config/constants');
 
 /**
  * Auth Middleware
@@ -81,9 +81,16 @@ const requireSuperAdmin = [authenticate, requireRole(ROLES.SUPER_ADMIN)];
  */
 const requireAdmin = [authenticate, requireRole(ROLES.SUPER_ADMIN, ROLES.TENANT_ADMIN)];
 
+/**
+ * Convenience middleware for staff (super_admin + tenant_admin + professor)
+ * Profesores e institutos que administran su propia academia.
+ */
+const requireStaff = [authenticate, requireRole(...STAFF_ROLES)];
+
 module.exports = {
   authenticate,
   requireRole,
   requireSuperAdmin,
   requireAdmin,
+  requireStaff,
 };

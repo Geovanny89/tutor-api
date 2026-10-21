@@ -14,5 +14,6 @@ router.get('/users', AdminController.getUsers);
 router.get('/users/:id', AdminController.getUserDetail);
 router.put('/users/:id', AdminController.updateUser);
 router.delete('/users/:id', AdminController.deleteUser);
+router.post('/users/:id/impersonate', AdminController.impersonateUser);
 
 module.exports = router;

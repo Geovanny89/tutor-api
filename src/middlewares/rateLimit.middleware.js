@@ -5,21 +5,31 @@ const ApiResponse = require('../utils/apiResponse');
 const { HTTP_STATUS } = require('../config/constants');
 
 /**
+ * Límite diario de IA fijo para las academias: lo define la plataforma y el
+ * profesor no puede modificarlo (por eso no se expone en la configuración).
+ */
+const ACADEMY_AI_DAILY_LIMIT = 30;
+
+/**
  * Resolve the daily AI limit that actually applies to a user.
- * Single source of truth: tenant override first, env default as fallback.
+ * Las academias usan el límite fijo de la plataforma; el resto (plataforma
+ * global) usa el límite del tenant o el valor por defecto del .env.
+ * Bonus tokens earned by watching ads are added on top of the daily quota.
  * Used by checkAiLimit and by the usage endpoint so both report the same limit.
- * @param {object} user - authenticated user (needs tenant_id)
+ * @param {object} user - authenticated user (needs tenant_id and bonus_tokens)
  * @returns {Promise<number>} daily interaction limit
  */
 const resolveDailyLimit = async (user) => {
   let dailyLimit = parseInt(process.env.AI_DAILY_LIMIT) || 50;
   if (user?.tenant_id) {
     const tenant = await Tenant.findByPk(user.tenant_id, {
-      attributes: ['ai_daily_limit'],
+      attributes: ['ai_daily_limit', 'owner_id'],
     });
-    if (tenant) dailyLimit = tenant.ai_daily_limit;
+    if (tenant) {
+      dailyLimit = tenant.owner_id ? ACADEMY_AI_DAILY_LIMIT : tenant.ai_daily_limit;
+    }
   }
-  return dailyLimit;
+  return dailyLimit + (user?.bonus_tokens || 0);
 };
 
 /**

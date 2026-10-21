@@ -13,12 +13,22 @@ const {
 const ApiResponse = require('../utils/apiResponse');
 const CacheService = require('../utils/cache');
 const { HTTP_STATUS, ROLES, LEVEL_ORDER } = require('../config/constants');
+const jwt = require('jsonwebtoken');
 
 /**
  * Admin Controller - MVC Controller layer
  * Full platform control for super_admin / tenant_admin:
  * metrics, students management, content overview
  */
+
+// ─── Helper: Generate JWT Token ───────────────────────────────────────────────
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
+};
 
 // ─── Helper: tenant scoping ───────────────────────────────────────────────────
 // super_admin sees the whole platform; tenant_admin only their own tenant
@@ -320,6 +330,39 @@ const AdminController = {
       return ApiResponse.success(res, { id: user.id }, `User ${user.email} deleted.`);
     } catch (error) {
       return ApiResponse.error(res, 'Failed to delete user.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * POST /api/admin/users/:id/impersonate
+   * Allows a super_admin to get a token for another user
+   */
+  async impersonateUser(req, res) {
+    try {
+      // Only SUPER_ADMIN can impersonate
+      if (req.user.role !== ROLES.SUPER_ADMIN) {
+        return ApiResponse.error(res, 'Only Super Admins can perform this action.', HTTP_STATUS.FORBIDDEN);
+      }
+
+      const user = await User.findByPk(req.params.id);
+      if (!user) {
+        return ApiResponse.error(res, 'Target user not found.', HTTP_STATUS.NOT_FOUND);
+      }
+
+      // Do not allow impersonating other super admins (optional security measure)
+      if (user.role === ROLES.SUPER_ADMIN && user.id !== req.user.id) {
+        return ApiResponse.error(res, 'You cannot impersonate another Super Admin.', HTTP_STATUS.FORBIDDEN);
+      }
+
+      const token = generateToken(user);
+
+      return ApiResponse.success(res, {
+        user: user.toSafeObject(),
+        token,
+        is_impersonation: true,
+      }, `Impersonating ${user.name}...`);
+    } catch (error) {
+      return ApiResponse.error(res, 'Impersonation failed.', HTTP_STATUS.INTERNAL_ERROR, error.message);
     }
   },
 };

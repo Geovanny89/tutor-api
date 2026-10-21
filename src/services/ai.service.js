@@ -50,6 +50,7 @@ const fill = (template, values) =>
   );
 
 const levelGuide = (level) => AI_CONFIG.levelGuide[level] || AI_CONFIG.levelGuide.A1;
+const ageGuide = (ageRange) => AI_CONFIG.ageGuide[ageRange] || AI_CONFIG.ageGuide.adults;
 
 /**
  * Extract the first JSON object found in a model answer.
@@ -223,14 +224,15 @@ const AiService = {
    * @param {object} options - { mode: 'conversation'|'lesson'|'technical', persona, context, domain }
    */
   async generateResponse(userMessage, level = 'A1', history = [], options = {}) {
-    const { mode = 'conversation', persona = 'Beyli (Friendly Native Tutor)', context = '', domain = 'general professional English' } = options;
+    const { mode = 'conversation', persona = 'Beyli (Friendly Native Tutor)', context = '', domain = 'general professional English', ageRange = 'adults' } = options;
+    const ageDirective = ageGuide(ageRange);
 
     const systemPrompt =
       mode === 'technical'
         ? fill(AI_CONFIG.technicalPrompt, { level, levelGuide: levelGuide(level), domain })
         : mode === 'lesson'
-          ? fill(AI_CONFIG.lessonPrompt, { level, levelGuide: levelGuide(level), context: context || 'general English lesson' })
-          : fill(AI_CONFIG.conversationPrompt, { level, levelGuide: levelGuide(level), persona });
+          ? fill(AI_CONFIG.lessonPrompt, { level, levelGuide: levelGuide(level), context: context || 'general English lesson', ageDirective })
+          : fill(AI_CONFIG.conversationPrompt, { level, levelGuide: levelGuide(level), persona, ageDirective });
 
     const messages = [
       ...history.slice(-8).map((m) => ({ role: m.role, content: m.content })),
@@ -345,22 +347,23 @@ const AiService = {
   },
 
   // ─── 3. Explain a lesson concept (in-lesson tutor) ────────────────────────
-  async explainLessonConcept(lessonTitle, grammarRule, studentQuestion = '', level = 'A1') {
+  async explainLessonConcept(lessonTitle, grammarRule, studentQuestion = '', level = 'A1', ageRange = 'adults') {
     const systemPrompt = `You are Beyli, a warm, highly pedagogical native English tutor guiding a Spanish-speaking student step-by-step through their English lesson.
 CEFR Level: ${level} — ${levelGuide(level)}
+${ageGuide(ageRange)}
 Lesson topic: "${lessonTitle}"
 Grammar structure: "${grammarRule}"
 ${studentQuestion ? `The student specifically asks: "${studentQuestion}"` : 'Explain this topic clearly from scratch so the student truly understands it.'}
 
 Structure your explanation:
 1. Greet enthusiastically: "¡Hola! Vamos a dominar este tema paso a paso 🌟".
-2. Explain the concept simply in Spanish, with English examples, and WHY it works that way.
+2. Explain the concept simply, with English examples, and WHY it works that way. For children keep it very short and playful, using only words from their lessons.
 3. Show the exact formulas: afirmativo, negativo e interrogativo.
 4. Point out the #1 mistake Spanish speakers make with this structure.
 5. Give 2 real-life sentences they can use today, with Spanish translation.
 6. End with a short challenge inviting them to practice right now.
 
-Be clear, encouraging and practical. Keep it under 350 words.`;
+Be clear, encouraging and practical. Respect the length limit of the audience directive above.`;
 
     const { text, provider, tokensUsed } = await this.generateText({
       systemPrompt,
@@ -382,10 +385,10 @@ Be clear, encouraging and practical. Keep it under 350 words.`;
 
   // ─── 4. Practice engine: generate exercises for a module/lesson ───────────
   /**
-   * @param {object} params - { level, topic, type, count, context }
+   * @param {object} params - { level, topic, type, count, context, ageRange }
    * @returns {{ title, exercises: Array, provider, fromCache }}
    */
-  async generatePractice({ level = 'A1', topic = 'general English', type = 'fill_blank', count = 5, context = '' }) {
+  async generatePractice({ level = 'A1', topic = 'general English', type = 'fill_blank', count = 5, context = '', ageRange = 'adults' }) {
     const safeCount = Math.max(1, Math.min(10, Number(count) || 5));
     const allowedTypes = ['fill_blank', 'pronunciation', 'technical', 'vocabulary'];
     const safeType = type === 'mixed' ? 'mixed' : allowedTypes.includes(type) ? type : 'fill_blank';
@@ -396,14 +399,21 @@ Be clear, encouraging and practical. Keep it under 350 words.`;
       ? 'Mix the exercise types freely among the allowed ones below for extra variety.'
       : `ALL ${safeCount} exercises MUST be of type "${safeType}". Do not use any other type.`;
 
+    const ageDirective = ageRange === 'kids'
+      ? 'TARGET AUDIENCE: Children (3-7 years old). Use extremely simple vocabulary, short sentences, and fun topics like animals, toys, colors, and basic actions. Keep it playful and use concrete nouns.'
+      : ageRange === 'teens'
+        ? 'TARGET AUDIENCE: Teenagers (8-16 years old). Use topics like games, sports, social media, school life, and hobbies. Use modern but clear language.'
+        : 'TARGET AUDIENCE: Adults (17+ years old). Use standard professional and daily life topics.';
+
     // v2 cache key to force refresh after schema update (added options field)
-    const cacheKey = `practice_v2:${level}:${safeType}:${safeCount}:${Buffer.from(topic).toString('base64').slice(0, 24)}`;
+    const cacheKey = `practice_v3:${level}:${safeType}:${safeCount}:${ageRange}:${Buffer.from(topic).toString('base64').slice(0, 24)}`;
 
     const { data, provider, fromCache, tokensUsed } = await this.generateJson({
       systemPrompt: AI_CONFIG.practiceSystemPrompt,
       userPrompt: fill(AI_CONFIG.practiceGeneratePrompt, {
         count: safeCount,
         typeDirective,
+        ageDirective,
         level,
         levelGuide: levelGuide(level),
         topic,

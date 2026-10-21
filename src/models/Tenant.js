@@ -26,6 +26,16 @@ const Tenant = sequelize.define('Tenant', {
     validate: { is: /^[a-z0-9-]+$/ },
     comment: 'URL-friendly identifier (e.g., "my-school")',
   },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Short description shown on the public academy page',
+  },
+  owner_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'User id of the professor/institute that owns this academy',
+  },
   logo_url: {
     type: DataTypes.TEXT,
     allowNull: true,
@@ -35,10 +45,29 @@ const Tenant = sequelize.define('Tenant', {
     defaultValue: '#6C63FF',
     comment: 'Brand color hex code',
   },
+  contact_email: {
+    type: DataTypes.STRING(150),
+    allowNull: true,
+  },
+  contact_phone: {
+    type: DataTypes.STRING(30),
+    allowNull: true,
+  },
+  // ── Which age segments this academy offers (kids / teens / adults) ─────────
+  enabled_age_ranges: {
+    type: DataTypes.JSON,
+    defaultValue: ['kids', 'teens', 'adults'],
+    comment: 'Age ranges the academy makes available to its students',
+  },
+  is_public_page_active: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    comment: 'Whether the public slug page accepts new registrations',
+  },
   ai_daily_limit: {
     type: DataTypes.INTEGER,
-    defaultValue: 20,
-    comment: 'Override global AI daily limit per tenant',
+    defaultValue: 30,
+    comment: 'Límite diario de IA de la academia (lo define la plataforma)',
   },
   is_active: {
     type: DataTypes.BOOLEAN,

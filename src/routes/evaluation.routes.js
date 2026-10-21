@@ -10,6 +10,8 @@ router.use(authenticate);
 
 router.get('/module/:moduleId', EvaluationController.getByModule);
 router.post('/:id/submit', EvaluationController.submit);
+router.post('/:id/attempt', EvaluationController.startAttempt);
+router.post('/attempts/:attemptId/submit', EvaluationController.submitAttempt);
 
 router.post('/', ...requireSuperAdmin, EvaluationController.create);
 router.delete('/:id', ...requireSuperAdmin, EvaluationController.remove);

@@ -3,7 +3,7 @@
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
 const sequelize = require('../config/database');
-const { ROLES, LEVELS } = require('../config/constants');
+const { ROLES, LEVELS, AGE_RANGES } = require('../config/constants');
 
 /**
  * User Model
@@ -44,6 +44,21 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM(...Object.values(LEVELS)),
     defaultValue: LEVELS.A1,
     comment: 'Current CEFR level of the student',
+  },
+  age_range: {
+    type: DataTypes.ENUM(...Object.values(AGE_RANGES)),
+    allowNull: true,
+    comment: 'Pedagogical segment: kids (3-7), teens (8-16), adults (17+)',
+  },
+  bonus_tokens: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    comment: 'Extra AI tokens earned by watching ads (reset daily)',
+  },
+  tokens_last_refill: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    comment: 'Date when the bonus token counter was last reset',
   },
   avatar_url: {
     type: DataTypes.TEXT,

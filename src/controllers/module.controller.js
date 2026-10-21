@@ -1,6 +1,6 @@
 'use strict';
 
-const { Module, Lesson, Evaluation, UserProgress } = require('../models');
+const { Module, Lesson, Evaluation, UserProgress, Tenant } = require('../models');
 const ApiResponse = require('../utils/apiResponse');
 const CacheService = require('../utils/cache');
 const { HTTP_STATUS, PROGRESS_STATUS, LEVEL_ORDER, ROLES } = require('../config/constants');
@@ -22,9 +22,23 @@ const ModuleController = {
       // Admins can request unpublished content for management (never cached)
       const isAdmin = req.user.role === ROLES.SUPER_ADMIN || req.user.role === ROLES.TENANT_ADMIN;
       const includeUnpublished = isAdmin && req.query.include_unpublished === 'true';
-      const publishedFilter = includeUnpublished ? {} : { is_published: true };
       const lessonFilter = includeUnpublished ? {} : { is_published: true };
       const evalFilter = includeUnpublished ? {} : { is_published: true };
+
+      // ── Alcance por academia ────────────────────────────────────────────
+      // super_admin ve todo; el resto ve SOLO el contenido de su academia.
+      // Los estudiantes de la plataforma (tenant sin dueño) ven los módulos globales.
+      let scopeFilter = {};
+      if (req.user.role !== ROLES.SUPER_ADMIN) {
+        const tenant = req.user.tenant_id ? await Tenant.findByPk(req.user.tenant_id) : null;
+        scopeFilter = tenant && tenant.owner_id
+          ? { tenant_id: tenant.id }   // academia: únicamente sus módulos
+          : { tenant_id: null };       // plataforma: únicamente módulos globales
+      }
+      const publishedFilter = {
+        ...scopeFilter,
+        ...(includeUnpublished ? {} : { is_published: true }),
+      };
 
       // Try cache first
       const cacheKey = `modules:user:${userId}`;

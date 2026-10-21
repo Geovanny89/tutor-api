@@ -2,7 +2,7 @@
 
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
-const { LEVELS, LEVEL_NAMES } = require('../config/constants');
+const { LEVELS, LEVEL_NAMES, AGE_RANGES, SUBJECTS } = require('../config/constants');
 
 /**
  * Module Model
@@ -18,6 +18,22 @@ const Module = sequelize.define('Module', {
   level: {
     type: DataTypes.ENUM(...Object.values(LEVELS)),
     allowNull: false,
+  },
+  // ── Pedagogical segmentation ──────────────────────────────────────────────
+  age_range: {
+    type: DataTypes.ENUM(...Object.values(AGE_RANGES)),
+    defaultValue: AGE_RANGES.ADULTS,
+    comment: 'Target age segment for this module',
+  },
+  subject: {
+    type: DataTypes.ENUM(...Object.values(SUBJECTS)),
+    defaultValue: SUBJECTS.ENGLISH,
+    comment: 'Materia: inglés, matemáticas o programación',
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'null = módulo global (plantilla); con valor = módulo propio de una academia',
   },
   name: {
     type: DataTypes.STRING(100),

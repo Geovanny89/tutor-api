@@ -7,9 +7,43 @@
 
 // ─── User Roles ───────────────────────────────────────────────────────────────
 const ROLES = {
-  SUPER_ADMIN: 'super_admin',  // Tú - acceso total
-  TENANT_ADMIN: 'tenant_admin', // Admin de cada organización/escuela
+  SUPER_ADMIN: 'super_admin',  // Tú - acceso total a toda la plataforma
+  TENANT_ADMIN: 'tenant_admin', // Admin de cada organización/escuela (academia)
+  PROFESSOR: 'professor',      // Profesor/instituto dueño de una academia (slug)
   STUDENT: 'student',          // Estudiante
+};
+
+// Roles con acceso a paneles de gestión (cualquier nivel de administración)
+const STAFF_ROLES = [ROLES.SUPER_ADMIN, ROLES.TENANT_ADMIN, ROLES.PROFESSOR];
+
+// ─── Age Ranges (segmentación pedagógica) ─────────────────────────────────────
+const AGE_RANGES = {
+  KIDS: 'kids',     // 3 a 7 años - iniciación con dibujos y frases cortas
+  TEENS: 'teens',   // 8 a 16 años - juegos de roles y misiones
+  ADULTS: 'adults', // 17 en adelante - interactivo y profesional
+};
+
+const AGE_RANGE_LABELS = {
+  kids: 'Niños (3-7 años)',
+  teens: 'Adolescentes (8-16 años)',
+  adults: 'Adultos (17+ años)',
+};
+
+const AGE_RANGE_ORDER = ['kids', 'teens', 'adults'];
+
+// ─── Subjects (materias administrables por el profesor) ───────────────────────
+const SUBJECTS = {
+  ENGLISH: 'english',
+  MATH: 'math',
+  PROGRAMMING: 'programming',
+};
+
+// ─── Token Economy (IA + publicidad recompensada) ─────────────────────────────
+const TOKENS = {
+  PROMO_REWARD: 5,        // Ver 1 video promocional → +5 tokens
+  EXTRA_REWARD: 3,        // Ver videos de relleno → +3 tokens c/u
+  MAX_EXTRA_ADS_PER_DAY: 4, // Máximo de videos extra recompensados por día
+  AD_DURATION_SECONDS: 45, // Duración aproximada de cada anuncio
 };
 
 // ─── English Levels (CEFR) ────────────────────────────────────────────────────
@@ -85,6 +119,12 @@ const HTTP_STATUS = {
 
 module.exports = {
   ROLES,
+  STAFF_ROLES,
+  AGE_RANGES,
+  AGE_RANGE_LABELS,
+  AGE_RANGE_ORDER,
+  SUBJECTS,
+  TOKENS,
   LEVELS,
   LEVEL_NAMES,
   LEVEL_ORDER,

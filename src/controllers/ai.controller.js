@@ -1,10 +1,49 @@
 'use strict';
 
 const AiService = require('../services/ai.service');
-const { ConversationSession, AiUsage, Module } = require('../models');
+const { ConversationSession, AiUsage, Module, Lesson } = require('../models');
 const { incrementAiUsage, resolveDailyLimit } = require('../middlewares/rateLimit.middleware');
 const ApiResponse = require('../utils/apiResponse');
 const { HTTP_STATUS } = require('../config/constants');
+
+/**
+ * Títulos de las lecciones del estudiante (según su nivel y rango de edad) para
+ * que el tutor conversacional practique el vocabulario/temas del currículo que
+ * le corresponde a cada edad. Nunca lanza: si falla, el tutor sigue sin contexto.
+ * @param {object} user - usuario autenticado (current_level, age_range)
+ * @returns {Promise<string>} contexto de currículo o cadena vacía
+ */
+const buildCurriculumContext = async (user) => {
+  try {
+    const modules = await Module.findAll({
+      where: {
+        level: user.current_level || 'A1',
+        age_range: user.age_range || 'adults',
+        is_published: true,
+      },
+      attributes: ['id'],
+      include: [{
+        model: Lesson,
+        as: 'lessons',
+        where: { is_published: true },
+        required: false,
+        attributes: ['title'],
+      }],
+      order: [['order_index', 'ASC']],
+      limit: 4,
+    });
+
+    const titles = modules
+      .flatMap((m) => (m.lessons || []).map((l) => l.title))
+      .slice(0, 8);
+
+    return titles.length
+      ? `Lecciones actuales del estudiante: ${titles.map((t) => `"${t}"`).join(', ')}. Practica ese vocabulario y esos temas.`
+      : '';
+  } catch {
+    return '';
+  }
+};
 
 /**
  * AI Controller - MVC Controller layer
@@ -44,6 +83,7 @@ const AiController = {
       } = req.body;
       const userId = req.user.id;
       const level = req.user.current_level;
+      const ageRange = req.body.age_range || req.user.age_range || 'adults';
 
       if (!message || message.trim().length === 0) {
         return ApiResponse.error(res, 'Please say something! 😊', HTTP_STATUS.BAD_REQUEST);
@@ -52,6 +92,10 @@ const AiController = {
       if (message.length > 2000) {
         return ApiResponse.error(res, 'Message too long. Keep it under 2000 characters.', HTTP_STATUS.BAD_REQUEST);
       }
+
+      // Alinea el tutor libre con las lecciones que le corresponden por edad.
+      const curriculum = mode === 'conversation' ? await buildCurriculumContext(req.user) : '';
+      const tutorContext = [context, curriculum].filter(Boolean).join(' ');
 
       // Load conversation history if session exists
       let session = null;
@@ -74,7 +118,7 @@ const AiController = {
         message,
         level,
         history,
-        { mode, persona, domain, context }
+        { mode, persona, domain, context: tutorContext, ageRange }
       );
 
       // Save to conversation session
@@ -159,12 +203,14 @@ const AiController = {
     try {
       const { lesson_title, grammar_rule, question, level } = req.body;
       const userLevel = level || req.user?.current_level || 'A1';
+      const ageRange = req.body.age_range || req.user?.age_range || 'adults';
 
       const result = await AiService.explainLessonConcept(
         lesson_title || 'English Concept',
         grammar_rule || '',
         question || '',
-        userLevel
+        userLevel,
+        ageRange
       );
 
       return ApiResponse.success(res, {
@@ -184,7 +230,7 @@ const AiController = {
    */
   async generatePractice(req, res) {
     try {
-      const { module_id, topic, type = 'fill_blank', count = 5 } = req.body;
+      const { module_id, topic, type = 'fill_blank', count = 5, age_range } = req.body;
 
       let resolvedTopic = topic;
       let context = '';
@@ -206,6 +252,7 @@ const AiController = {
         type,
         count,
         context,
+        ageRange: age_range || req.user.age_range || 'adults',
       });
 
       if (!result.generated) {

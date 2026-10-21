@@ -11,8 +11,68 @@
 
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
-const { sequelize, Module, Lesson, Evaluation, User, Tenant } = require('../src/models');
-const { ROLES, LEVELS } = require('../src/config/constants');
+const { sequelize, Module, Lesson, Evaluation, User, Tenant, Advertisement } = require('../src/models');
+const { ROLES, LEVELS, TOKENS } = require('../src/config/constants');
+
+// 7 anuncios: 1 video promocional (+5 tokens) + 6 videos de relleno (+3 tokens c/u)
+const advertisements = [
+  { 
+    title: 'Aprende inglés con KDice', 
+    description: 'Descubre el método que está cambiando la forma de aprender idiomas.', 
+    kind: 'promo', 
+    reward_tokens: TOKENS.PROMO_REWARD, 
+    order_index: 0,
+    image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=modern%20educational%20platform%20logo%20english%20learning%20kids%20adults%20professional&image_size=landscape_16_9'
+  },
+  { 
+    title: 'Libros digitales Kids', 
+    description: 'Cuentos ilustrados para practicar vocabulario desde casa.', 
+    kind: 'extra', 
+    reward_tokens: TOKENS.EXTRA_REWARD, 
+    order_index: 1,
+    image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=colorful%20children%20books%20illustration%20english%20learning&image_size=landscape_16_9'
+  },
+  { 
+    title: 'Clases en vivo', 
+    description: 'Practica conversación con profesores nativos en grupos pequeños.', 
+    kind: 'extra', 
+    reward_tokens: TOKENS.EXTRA_REWARD, 
+    order_index: 2,
+    image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=online%20english%20class%20video%20call%20teacher%20students&image_size=landscape_16_9'
+  },
+  { 
+    title: 'App de repaso diario', 
+    description: '5 minutos al día para no olvidar lo aprendido.', 
+    kind: 'extra', 
+    reward_tokens: TOKENS.EXTRA_REWARD, 
+    order_index: 3,
+    image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=smartphone%20app%20learning%20english%20daily%20streak&image_size=landscape_16_9'
+  },
+  { 
+    title: 'Certifícate rápido', 
+    description: 'Obtén tu certificado y compártelo con verificación QR.', 
+    kind: 'extra', 
+    reward_tokens: TOKENS.EXTRA_REWARD, 
+    order_index: 4,
+    image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=professional%20certificate%20diploma%20gold%20seal%20english&image_size=landscape_16_9'
+  },
+  { 
+    title: 'Kit de conversación', 
+    description: 'Frases listas para viajar y trabajar en inglés.', 
+    kind: 'extra', 
+    reward_tokens: TOKENS.EXTRA_REWARD, 
+    order_index: 5,
+    image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=travel%20passport%20suitcase%20business%20meeting%20english%20phrases&image_size=landscape_16_9'
+  },
+  { 
+    title: 'Comunidad KDice', 
+    description: 'Únete a miles de estudiantes y practica cada día.', 
+    kind: 'extra', 
+    reward_tokens: TOKENS.EXTRA_REWARD, 
+    order_index: 6,
+    image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=diverse%20group%20of%20people%20talking%20learning%20together&image_size=landscape_16_9'
+  },
+];
 
 const curriculum = [
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1425,9 +1485,12 @@ async function seed() {
       defaults: {
         name: 'KDice English Academy',
         slug: 'kdice-main',
+        description: 'Academia global de inglés con rutas por edades y tutor IA.',
         primary_color: '#059669',
         ai_daily_limit: 50,
         is_active: true,
+        is_public_page_active: true,
+        enabled_age_ranges: ['kids', 'teens', 'adults'],
         max_students: 1000,
       },
     });
@@ -1440,8 +1503,19 @@ async function seed() {
 
     console.log('📚 Inserting 5 curriculum blocks...');
     for (const modData of curriculum) {
+      // Distribución por edades:
+      // - Primeros 4 módulos del bloque 1: kids
+      // - Siguientes 4 módulos del bloque 1: teens
+      // - Resto: adults
+      let assignedAgeRange = 'adults';
+      if (modData.block === 1) {
+        if (modData.order_index < 4) assignedAgeRange = 'kids';
+        else assignedAgeRange = 'teens';
+      }
+
       const createdMod = await Module.create({
         level: modData.level,
+        age_range: assignedAgeRange,
         name: modData.name,
         description: modData.description,
         icon: modData.icon,
@@ -1453,11 +1527,12 @@ async function seed() {
         is_published: true,
       });
 
-      console.log(`   ✅ [Bloque ${modData.block} - ${modData.level}] ${modData.name}`);
+      console.log(`   ✅ [Bloque ${modData.block} - ${modData.level} - ${assignedAgeRange}] ${modData.name}`);
 
       for (const lessonData of modData.lessons) {
         await Lesson.create({
           module_id: createdMod.id,
+          age_range: assignedAgeRange,
           title: lessonData.title,
           subtitle: lessonData.subtitle,
           order_index: lessonData.order_index,
@@ -1531,7 +1606,50 @@ async function seed() {
       },
     });
 
+    // Academia demo (profesor con su propio slug público)
+    const profEmail = 'profe@kdice.com';
+    const [professor] = await User.findOrCreate({
+      where: { email: profEmail },
+      defaults: {
+        name: 'Profesor Demo',
+        email: profEmail,
+        password: 'Profe123!',
+        role: ROLES.PROFESSOR,
+        current_level: LEVELS.C1,
+        is_active: true,
+      },
+    });
+
+    const [demoAcademy] = await Tenant.findOrCreate({
+      where: { slug: 'demo-academy' },
+      defaults: {
+        name: 'Demo Academy',
+        slug: 'demo-academy',
+        description: 'Academia de ejemplo creada por un profesor para compartir su enlace.',
+        primary_color: '#6C63FF',
+        owner_id: professor.id,
+        contact_email: profEmail,
+        is_active: true,
+        is_public_page_active: true,
+        enabled_age_ranges: ['kids', 'teens', 'adults'],
+        max_students: 50,
+      },
+    });
+    if (!demoAcademy.owner_id) await demoAcademy.update({ owner_id: professor.id });
+
+    // Publicidad recompensada (7 anuncios)
+    console.log('📺 Seeding 7 advertisements...');
+    for (const ad of advertisements) {
+      await Advertisement.findOrCreate({
+        where: { title: ad.title },
+        defaults: { ...ad, duration_seconds: TOKENS.AD_DURATION_SECONDS, is_active: true },
+      });
+    }
+
     console.log('\n🎉 Complete 36-Module Curriculum Seeded Successfully!');
+    console.log(`   🏫 Academia por defecto: /academia/${tenant.slug}`);
+    console.log(`   🏫 Academia demo:        /academia/${demoAcademy.slug}`);
+    console.log(`   👤 Profesor demo:        ${profEmail} / Profe123!`);
   } catch (error) {
     console.error('❌ Curriculum seed failed:', error);
     process.exit(1);
