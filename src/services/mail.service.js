@@ -1,6 +1,11 @@
 'use strict';
 
-const nodemailer = require('nodemailer');
+let nodemailer = null;
+try {
+  nodemailer = require('nodemailer');
+} catch (e) {
+  // nodemailer no instalado todavía, usará modo consola
+}
 
 /**
  * Mail Service
@@ -10,7 +15,7 @@ const nodemailer = require('nodemailer');
  */
 
 let transporter = null;
-const hasSmtp = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER);
+const hasSmtp = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && nodemailer);
 
 if (hasSmtp) {
   transporter = nodemailer.createTransport({
