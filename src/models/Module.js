@@ -35,6 +35,11 @@ const Module = sequelize.define('Module', {
     allowNull: true,
     comment: 'null = módulo global (plantilla); con valor = módulo propio de una academia',
   },
+  professor_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'ID del profesor que creó o administra este módulo (los alumnos asignados a este profesor ven este módulo)',
+  },
   name: {
     type: DataTypes.STRING(100),
     allowNull: false,

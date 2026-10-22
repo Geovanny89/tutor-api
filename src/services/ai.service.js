@@ -224,15 +224,33 @@ const AiService = {
    * @param {object} options - { mode: 'conversation'|'lesson'|'technical', persona, context, domain }
    */
   async generateResponse(userMessage, level = 'A1', history = [], options = {}) {
-    const { mode = 'conversation', persona = 'Beyli (Friendly Native Tutor)', context = '', domain = 'general professional English', ageRange = 'adults' } = options;
+    const {
+      mode = 'conversation',
+      persona = 'Beyli (Friendly Native Tutor)',
+      context = '',
+      domain = 'general professional English',
+      ageRange = 'adults',
+      bilingual = false,
+      personaName = '',
+    } = options;
     const ageDirective = ageGuide(ageRange);
 
-    const systemPrompt =
-      mode === 'technical'
-        ? fill(AI_CONFIG.technicalPrompt, { level, levelGuide: levelGuide(level), domain })
-        : mode === 'lesson'
-          ? fill(AI_CONFIG.lessonPrompt, { level, levelGuide: levelGuide(level), context: context || 'general English lesson', ageDirective })
-          : fill(AI_CONFIG.conversationPrompt, { level, levelGuide: levelGuide(level), persona, ageDirective });
+    const isToby =
+      bilingual ||
+      personaName?.toLowerCase().includes('toby') ||
+      persona?.toLowerCase().includes('toby') ||
+      (ageRange === 'kids' && mode === 'conversation');
+
+    let systemPrompt;
+    if (isToby) {
+      systemPrompt = AI_CONFIG.tobyPrompt;
+    } else if (mode === 'technical') {
+      systemPrompt = fill(AI_CONFIG.technicalPrompt, { level, levelGuide: levelGuide(level), domain });
+    } else if (mode === 'lesson') {
+      systemPrompt = fill(AI_CONFIG.lessonPrompt, { level, levelGuide: levelGuide(level), context: context || 'general English lesson', ageDirective });
+    } else {
+      systemPrompt = fill(AI_CONFIG.conversationPrompt, { level, levelGuide: levelGuide(level), persona, ageDirective });
+    }
 
     const messages = [
       ...history.slice(-8).map((m) => ({ role: m.role, content: m.content })),
@@ -242,6 +260,14 @@ const AiService = {
     const { text, provider, tokensUsed } = await this.generateText({ systemPrompt, messages });
 
     if (!text) {
+      if (isToby) {
+        return {
+          text: '¡Woof woof! 🐶 ¡Hola amiguito! Adivina: ¿de qué color es el sol? Se dice [[ENGLISH: YELLOW]]. ¡Repite conmigo!',
+          tokensUsed: 0,
+          fromCache: false,
+          provider: 'fallback',
+        };
+      }
       const fallback = AI_CONFIG.fallbackMessages[Math.floor(Math.random() * AI_CONFIG.fallbackMessages.length)];
       return { text: fallback, tokensUsed: 0, fromCache: false, provider: 'fallback' };
     }
@@ -531,6 +557,111 @@ Be clear, encouraging and practical. Respect the length limit of the audience di
     });
 
     return { text: translated, provider, tokensUsed };
+  },
+
+  // ─── 7. Professor: 1-Click Lesson & Activity Generator ───────────────────
+  /**
+   * @param {object} params - { tema, edadGrupo, nivel }
+   * @returns {{ lesson: object, generated: boolean, provider: string, fromCache: boolean, tokensUsed: number }}
+   */
+  async generateLessonStructure({ tema, edadGrupo = 'Niños', nivel = 'A1' }) {
+    const cacheKey = `lesson_struct:${nivel}:${Buffer.from(`${tema}|${edadGrupo}`).toString('base64').slice(0, 32)}`;
+
+    const { data, provider, fromCache, tokensUsed } = await this.generateJson({
+      systemPrompt: AI_CONFIG.lessonGeneratorSystemPrompt,
+      userPrompt: fill(AI_CONFIG.lessonGeneratorPrompt, {
+        tema,
+        edadGrupo,
+        nivel,
+      }),
+      cacheKey,
+      ttl: 3600,
+      maxTokens: 1400,
+    });
+
+    if (data && (data.titulo_leccion || data.objetivo)) {
+      return {
+        lesson: {
+          titulo_leccion: data.titulo_leccion || tema,
+          objetivo: data.objetivo || `Aprender vocabulario y estructuras sobre ${tema}`,
+          vocabulario_clave: Array.isArray(data.vocabulario_clave) ? data.vocabulario_clave : [],
+          prompt_asistente_ia: data.prompt_asistente_ia || `Eres un tutor paciente enseñando ${tema} a ${edadGrupo}.`,
+          quiz: Array.isArray(data.quiz) ? data.quiz : [],
+          retos_de_voz: Array.isArray(data.retos_de_voz) ? data.retos_de_voz : [],
+        },
+        generated: true,
+        provider,
+        fromCache,
+        tokensUsed,
+      };
+    }
+
+    // Local pedagogical fallback (never blocks the teacher)
+    return {
+      lesson: {
+        titulo_leccion: tema,
+        objetivo: `Dominar vocabulario esencial y estructuras clave de "${tema}" para nivel ${nivel}.`,
+        vocabulario_clave: ['hello', 'practice', 'listen', 'speak'],
+        prompt_asistente_ia: `Eres un tutor alegre enseñando "${tema}" en nivel ${nivel}. Guía con frases cortas y felicitaciones.`,
+        quiz: [
+          {
+            pregunta: `¿Cuál es una palabra clave de esta lección sobre ${tema}?`,
+            opciones: ['practice', 'yesterday', 'slowly'],
+            respuesta_correcta: 'practice',
+          },
+        ],
+        retos_de_voz: [`Let's practice talking about ${tema}!`, 'Repeat with me: great job!'],
+      },
+      generated: true,
+      provider: 'fallback',
+      fromCache: false,
+      tokensUsed: 0,
+    };
+  },
+
+  // ─── 8. Professor: Pedagogical Progress Report for Parents/Professors ────
+  /**
+   * @param {object} params - { nombreAlumno, edad, historial }
+   * @returns {{ report: object, provider: string, usedAi: boolean, tokensUsed: number }}
+   */
+  async analyzeStudentProgress({ nombreAlumno, edad, historial }) {
+    const { data, provider, fromCache, tokensUsed } = await this.generateJson({
+      systemPrompt: AI_CONFIG.studentProgressSystemPrompt,
+      userPrompt: fill(AI_CONFIG.studentProgressPrompt, {
+        nombreAlumno: nombreAlumno || 'Estudiante',
+        edad: edad || 8,
+        historial: historial || 'Sin historial reciente.',
+      }),
+      ttl: 600,
+      maxTokens: 800,
+    });
+
+    if (data && (data.fortalezas || data.oportunidades_mejora)) {
+      return {
+        report: {
+          fortalezas: data.fortalezas || 'Muestra entusiasmo y buena disposición para participar.',
+          oportunidades_mejora: data.oportunidades_mejora || 'Continuar reforzando pronunciación en sonidos vocálicos.',
+          palabras_aprendidas: Array.isArray(data.palabras_aprendidas) ? data.palabras_aprendidas : [],
+          sugerencia_pedagogica: data.sugerencia_pedagogica || 'Practicar 5 minutos diarios de repetición guiada.',
+        },
+        provider,
+        usedAi: !fromCache && provider !== 'local',
+        tokensUsed,
+      };
+    }
+
+    // Fallback if offline
+    return {
+      report: {
+        fortalezas: 'Demuestra participación activa en las sesiones y comprensión auditiva de instrucciones básicas.',
+        oportunidades_mejora: 'Reforzar pronunciación fluida y perder el miedo a responder en inglés.',
+        palabras_aprendidas: ['colors', 'animals', 'greetings'],
+        sugerencia_pedagogica: 'Refuerza los retos de voz cortos al inicio de la siguiente clase.',
+      },
+      provider: 'fallback',
+      usedAi: false,
+      tokensUsed: 0,
+    };
   },
 };
 

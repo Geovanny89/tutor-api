@@ -80,6 +80,9 @@ const AiController = {
         persona = 'Beyli (Friendly Native Tutor)',
         domain = 'general professional English',
         context = '',
+        bilingual = false,
+        persona_name = '',
+        persona_role = '',
       } = req.body;
       const userId = req.user.id;
       const level = req.user.current_level;
@@ -118,7 +121,16 @@ const AiController = {
         message,
         level,
         history,
-        { mode, persona, domain, context: tutorContext, ageRange }
+        {
+          mode,
+          persona,
+          domain,
+          context: tutorContext,
+          ageRange,
+          bilingual: !!bilingual,
+          personaName: persona_name,
+          personaRole: persona_role,
+        }
       );
 
       // Save to conversation session

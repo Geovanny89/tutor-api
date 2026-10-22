@@ -1,5 +1,6 @@
 'use strict';
 
+const { Op } = require('sequelize');
 const { Module, Lesson, Evaluation, UserProgress, Tenant } = require('../models');
 const ApiResponse = require('../utils/apiResponse');
 const CacheService = require('../utils/cache');
@@ -25,24 +26,58 @@ const ModuleController = {
       const lessonFilter = includeUnpublished ? {} : { is_published: true };
       const evalFilter = includeUnpublished ? {} : { is_published: true };
 
-      // ── Alcance por academia ────────────────────────────────────────────
-      // super_admin ve todo; el resto ve SOLO el contenido de su academia.
-      // Los estudiantes de la plataforma (tenant sin dueño) ven los módulos globales.
+      // ── Alcance por academia y por profesor ──────────────────────────────
+      // super_admin ve todo; estudiantes ven el contenido de su academia y de su profesor asignado.
       let scopeFilter = {};
       if (req.user.role !== ROLES.SUPER_ADMIN) {
-        const tenant = req.user.tenant_id ? await Tenant.findByPk(req.user.tenant_id) : null;
-        scopeFilter = tenant && tenant.owner_id
-          ? { tenant_id: tenant.id }   // academia: únicamente sus módulos
-          : { tenant_id: null };       // plataforma: únicamente módulos globales
+        let tenantId = req.user.tenant_id;
+        // Si no tiene tenant_id pero tiene professor_id, resolver academia desde el profesor
+        if (!tenantId && req.user.professor_id) {
+          const prof = await User.findByPk(req.user.professor_id);
+          if (prof?.tenant_id) tenantId = prof.tenant_id;
+        }
+
+        if (tenantId) {
+          const tenant = await Tenant.findByPk(tenantId);
+          scopeFilter = { tenant_id: tenantId };
+          // Si el alumno tiene profesor asignado, ve las clases de ese profesor (o las generales de la academia)
+          if (req.user.role === ROLES.STUDENT && req.user.professor_id) {
+            const allowedProfessors = [req.user.professor_id];
+            if (tenant?.owner_id) allowedProfessors.push(tenant.owner_id);
+            scopeFilter[Op.or] = [
+              { professor_id: { [Op.in]: allowedProfessors } },
+              { professor_id: null },
+            ];
+          }
+        } else {
+          scopeFilter = { tenant_id: null };
+        }
       }
+
+      // Filtrar por segmento de edad pedagógico (kids solo ve kids, adults solo ve adults, etc.)
+      if (req.user.role === ROLES.STUDENT && req.user.age_range) {
+        scopeFilter.age_range = req.user.age_range;
+      }
+
+      // Asegurar currículo de Jóvenes si el estudiante es teens
+      if (req.user.age_range === 'teens') {
+        try {
+          const { ensureTeenCurriculum } = require('../services/teenCurriculum');
+          await ensureTeenCurriculum();
+        } catch (seedErr) {
+          console.warn('⚠️ Could not seed teen curriculum:', seedErr.message);
+        }
+      }
+
       const publishedFilter = {
         ...scopeFilter,
         ...(includeUnpublished ? {} : { is_published: true }),
       };
 
-      // Try cache first
+      // Try cache first (skip for students in an academy so new lessons show immediately)
+      const isStudentInAcademy = req.user.role === ROLES.STUDENT && (req.user.tenant_id || req.user.professor_id);
       const cacheKey = `modules:user:${userId}`;
-      const cached = CacheService.get(cacheKey);
+      const cached = isStudentInAcademy ? null : CacheService.get(cacheKey);
       if (!includeUnpublished && cached && Array.isArray(cached) && cached.length > 0) {
         return ApiResponse.success(res, cached, 'Modules retrieved.');
       }
@@ -57,7 +92,7 @@ const ModuleController = {
             as: 'lessons',
             where: lessonFilter,
             required: false,
-            attributes: ['id', 'title', 'order_index', 'duration_minutes', 'xp_reward', 'icon', 'requires_voice', 'is_published'],
+            attributes: ['id', 'title', 'order_index', 'duration_minutes', 'xp_reward', 'icon', 'requires_voice', 'is_published', 'content'],
             order: [['order_index', 'ASC']],
           },
           {
@@ -146,12 +181,39 @@ const ModuleController = {
    */
   async getById(req, res) {
     try {
-      const module = await Module.findByPk(req.params.id, {
-        include: [
-          { model: Lesson, as: 'lessons', where: { is_published: true }, required: false, order: [['order_index', 'ASC']] },
-          { model: Evaluation, as: 'evaluation', where: { is_published: true }, required: false },
-        ],
-      });
+      const rawId = req.params.id;
+      let module = null;
+
+      const teenSlugMap = {
+        'teen_mod_grammar': '1. Gramática Avanzada para Jóvenes',
+        'teen_mod_skills': '2. Habilidades Comunicativas Juveniles',
+        'teen_mod_practical': '3. Enfoque Práctico y Situaciones Reales',
+      };
+
+      const includes = [
+        { model: Lesson, as: 'lessons', where: { is_published: true }, required: false, order: [['order_index', 'ASC']] },
+        { model: Evaluation, as: 'evaluation', where: { is_published: true }, required: false },
+      ];
+
+      if (teenSlugMap[rawId]) {
+        try {
+          const { ensureTeenCurriculum } = require('../services/teenCurriculum');
+          await ensureTeenCurriculum();
+        } catch (_) {}
+
+        module = await Module.findOne({
+          where: { name: teenSlugMap[rawId], age_range: 'teens' },
+          include: includes,
+        });
+      } else if (!isNaN(rawId)) {
+        module = await Module.findByPk(rawId, { include: includes });
+      } else {
+        // Buscar por nombre si no es numérico
+        module = await Module.findOne({
+          where: { name: rawId },
+          include: includes,
+        });
+      }
 
       if (!module) {
         return ApiResponse.error(res, 'Module not found.', HTTP_STATUS.NOT_FOUND);
@@ -164,7 +226,7 @@ const ModuleController = {
         Lessons: moduleJson.lessons || [],
       }, 'Module retrieved.');
     } catch (error) {
-      return ApiResponse.error(res, 'Failed to retrieve module.', HTTP_STATUS.INTERNAL_ERROR);
+      return ApiResponse.error(res, 'Failed to retrieve module.', HTTP_STATUS.INTERNAL_ERROR, error.message);
     }
   },
 

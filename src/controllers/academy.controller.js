@@ -56,14 +56,25 @@ const AcademyController = {
       const tenant = await Tenant.findOne({ where: { slug: req.params.slug, is_active: true } });
       if (!tenant) return ApiResponse.error(res, 'Academy not found.', HTTP_STATUS.NOT_FOUND);
 
-      const [studentCount, moduleCount, lessonCount] = await Promise.all([
+      const [studentCount, moduleCount, lessonCount, professors] = await Promise.all([
         User.count({ where: { tenant_id: tenant.id, role: ROLES.STUDENT } }),
         Module.count({ where: { tenant_id: tenant.id } }),
         Lesson.count({ where: { tenant_id: tenant.id } }),
+        User.findAll({
+          where: { tenant_id: tenant.id, role: ROLES.PROFESSOR, is_active: true },
+          attributes: ['id', 'name', 'avatar_url'],
+          order: [['created_at', 'ASC']],
+        }),
       ]);
 
       return ApiResponse.success(res, {
         academy: publicProjection(tenant),
+        professors: professors.map((p) => ({
+          id: p.id,
+          name: p.name,
+          avatar_url: p.avatar_url,
+          is_owner: p.id === tenant.owner_id,
+        })),
         stats: {
           students: studentCount,
           custom_modules: moduleCount,

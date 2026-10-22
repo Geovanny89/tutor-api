@@ -16,6 +16,8 @@ const {
 const ApiResponse = require('../utils/apiResponse');
 const CacheService = require('../utils/cache');
 const { findManagedAcademy } = require('../utils/tenantScope');
+const AiService = require('../services/ai.service');
+const { incrementAiUsage } = require('../middlewares/rateLimit.middleware');
 const {
   ROLES,
   AGE_RANGE_ORDER,
@@ -23,6 +25,15 @@ const {
   SUBJECTS,
   HTTP_STATUS,
 } = require('../config/constants');
+
+/** Maps UI age labels to Lesson.age_range enum */
+const mapEdadToAgeRange = (edadGrupo) => {
+  const v = String(edadGrupo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (v.includes('nin') || v.includes('kid') || v.includes('infantil')) return 'kids';
+  if (v.includes('joven') || v.includes('teen') || v.includes('adolescent')) return 'teens';
+  if (v.includes('adult')) return 'adults';
+  return 'adults';
+};
 
 /**
  * Professor Controller
@@ -237,10 +248,20 @@ const ProfessorController = {
       const academy = await requireAcademy(req, res);
       if (!academy) return;
 
+      const { ensureTeenCurriculum } = require('../services/teenCurriculum');
+      await ensureTeenCurriculum();
+
       const modules = await Module.findAll({
         where: { [Op.or]: [{ tenant_id: academy.id }, { tenant_id: null }] },
-        include: [{ model: Lesson, as: 'lessons', attributes: ['id'] }],
-        order: [['order_index', 'ASC']],
+        include: [{
+          model: Lesson,
+          as: 'lessons',
+          attributes: ['id', 'title', 'subtitle', 'situation', 'icon', 'order_index', 'is_published', 'teacher_prompt'],
+        }],
+        order: [
+          ['order_index', 'ASC'],
+          [{ model: Lesson, as: 'lessons' }, 'order_index', 'ASC'],
+        ],
       });
 
       const data = modules.map((m) => ({
@@ -254,6 +275,16 @@ const ProfessorController = {
         is_published: m.is_published,
         is_own: m.tenant_id === academy.id,
         lessons_count: m.lessons?.length || 0,
+        lessons: (m.lessons || []).map((l) => ({
+          id: l.id,
+          title: l.title,
+          subtitle: l.subtitle,
+          situation: l.situation,
+          icon: l.icon,
+          order_index: l.order_index,
+          is_published: l.is_published,
+          teacher_prompt: l.teacher_prompt,
+        })),
       }));
 
       return ApiResponse.success(res, { modules: data }, 'Modules retrieved.');
@@ -289,6 +320,7 @@ const ProfessorController = {
       const module = await Module.create({
         ...value,
         tenant_id: academy.id,
+        professor_id: req.user.id,
         order_index: orderIndex,
         is_published: true,
       });
@@ -401,6 +433,7 @@ const ProfessorController = {
         order_index: orderIndex,
         is_published: true,
         tenant_id: academy.id,
+        professor_id: req.user.id,
       });
 
       const sourceLessons = source.lessons || [];
@@ -497,6 +530,41 @@ const ProfessorController = {
       return ApiResponse.success(res, { lesson }, 'Lesson created.', HTTP_STATUS.CREATED);
     } catch (error) {
       return ApiResponse.error(res, 'Failed to create lesson.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * PUT /api/professor/lessons/:id
+   */
+  async updateLesson(req, res) {
+    try {
+      const academy = await requireAcademy(req, res);
+      if (!academy) return;
+
+      const lesson = await Lesson.findOne({ where: { id: req.params.id, tenant_id: academy.id } });
+      if (!lesson) return ApiResponse.error(res, 'Lesson not found.', HTTP_STATUS.NOT_FOUND);
+
+      const schema = Joi.object({
+        title: Joi.string().min(2).max(150),
+        subtitle: Joi.string().allow('', null),
+        situation: Joi.string().allow('', null),
+        teacher_prompt: Joi.string().allow('', null),
+        age_range: Joi.string().valid(...AGE_RANGE_ORDER).allow(null),
+        subject: Joi.string().valid(...Object.values(SUBJECTS)).allow(null),
+        content: Joi.object(),
+        icon: Joi.string().max(10),
+        is_published: Joi.boolean(),
+      });
+      const { error, value } = schema.validate(req.body, { abortEarly: false });
+      if (error) {
+        return ApiResponse.error(res, error.details.map((d) => d.message).join('. '), HTTP_STATUS.BAD_REQUEST);
+      }
+
+      await lesson.update(value);
+      CacheService.flush();
+      return ApiResponse.success(res, { lesson }, 'Lesson updated.');
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to update lesson.', HTTP_STATUS.INTERNAL_ERROR, error.message);
     }
   },
 
@@ -669,12 +737,21 @@ const ProfessorController = {
       const academy = await requireAcademy(req, res);
       if (!academy) return;
 
-      const [students, blocked, ownModules, ownLessons] = await Promise.all([
+      const [students, blocked, ownModules, ownLessons, professors] = await Promise.all([
         User.count({ where: { tenant_id: academy.id, role: ROLES.STUDENT } }),
-        User.count({ where: { tenant_id: academy.id, role: ROLES.STUDENT, is_active: false } }),
+        User.count({
+          where: {
+            tenant_id: academy.id,
+            role: ROLES.STUDENT,
+            [Op.or]: [{ is_active: false }, { is_active: 0 }, { is_active: null }],
+          },
+        }),
         Module.count({ where: { tenant_id: academy.id } }),
         Lesson.count({ where: { tenant_id: academy.id } }),
+        User.count({ where: { tenant_id: academy.id, role: ROLES.PROFESSOR } }),
       ]);
+
+      const maxProfessors = academy.max_professors || 5;
 
       return ApiResponse.success(res, {
         academy: {
@@ -685,6 +762,8 @@ const ProfessorController = {
           logo_url: academy.logo_url,
           enabled_age_ranges: academy.enabled_age_ranges,
           is_public_page_active: academy.is_public_page_active,
+          type: academy.type || 'academy',
+          max_professors: maxProfessors,
         },
         metrics: {
           students,
@@ -694,10 +773,363 @@ const ProfessorController = {
           max_students: academy.max_students,
           own_modules: ownModules,
           own_lessons: ownLessons,
+          professors,
+          max_professors: maxProfessors,
+          professors_spots_left: Math.max(0, maxProfessors - professors),
+          is_academy: academy.type === 'academy' || Boolean(academy.owner_id),
         },
       }, 'Overview retrieved.');
     } catch (error) {
       return ApiResponse.error(res, 'Failed to retrieve overview.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * POST /api/professor/lessons/generate
+   * 1-click AI lesson generator. Optionally persists the lesson into a module.
+   * Body: { tema, edad_grupo, nivel, module_id?, save? }
+   */
+  async generateLessonAi(req, res) {
+    try {
+      const academy = await requireAcademy(req, res);
+      if (!academy) return;
+
+      const {
+        tema,
+        edad_grupo = 'Niños',
+        nivel = 'A1',
+        module_id,
+        kids_game,
+        teens_game,
+        save = false,
+      } = req.body;
+
+      if (!tema || !String(tema).trim()) {
+        return ApiResponse.error(res, 'El campo "tema" es obligatorio.', HTTP_STATUS.BAD_REQUEST);
+      }
+
+      const result = await AiService.generateLessonStructure({
+        tema: String(tema).trim(),
+        edadGrupo: edad_grupo,
+        nivel,
+      });
+
+      if (!result.generated || !result.lesson) {
+        return ApiResponse.error(
+          res,
+          'No se pudo generar la lección con IA. Intenta de nuevo.',
+          HTTP_STATUS.SERVICE_UNAVAILABLE,
+          { provider: result.provider }
+        );
+      }
+
+      if (!result.fromCache) {
+        await incrementAiUsage(req.user.id, result.tokensUsed || 400);
+      }
+
+      let savedLesson = null;
+      if (save) {
+        // Resolve module: use provided module_id, or auto-find/create a module
+        let module;
+        if (module_id) {
+          module = await Module.findOne({ where: { id: module_id, tenant_id: academy.id } });
+          if (!module) {
+            return ApiResponse.error(res, 'Module not found in your academy.', HTTP_STATUS.NOT_FOUND);
+          }
+        } else {
+          const ageRange = mapEdadToAgeRange(edad_grupo);
+          const defaultModuleName = ageRange === 'kids' ? 'Aventuras en Inglés Kids' : 'Lecciones';
+          module = await Module.findOne({
+            where: {
+              tenant_id: academy.id,
+              name: defaultModuleName,
+              age_range: ageRange,
+            },
+          });
+          if (!module) {
+            const count = await Module.count({ where: { tenant_id: academy.id } });
+            module = await Module.create({
+              tenant_id: academy.id,
+              name: defaultModuleName,
+              description: ageRange === 'kids' ? 'Módulo interactivo con juegos para niños.' : 'Módulo de lecciones.',
+              level: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(nivel) ? nivel : 'A1',
+              age_range: ageRange,
+              subject: 'english',
+              icon: ageRange === 'kids' ? '🐶' : '📚',
+              is_published: true,
+              order_index: count,
+              total_lessons: 0,
+              professor_id: req.user.id,
+            });
+          }
+        }
+
+        const generated = result.lesson;
+        const ageRange = mapEdadToAgeRange(edad_grupo) || module.age_range;
+        const content = {
+          intro: {
+            text: generated.objetivo || '',
+            audio_text: generated.titulo_leccion || tema,
+          },
+          vocabulary: (generated.vocabulario_clave || []).map((word) => ({
+            word,
+            translation: '',
+            example: '',
+          })),
+          kids_game: kids_game || (ageRange === 'kids' ? 'memory_match' : undefined),
+          teens_game: teens_game || (ageRange === 'teens' ? 'boss_battle' : undefined),
+          practice: (generated.quiz || []).map((q, i) => ({
+            type: 'multiple_choice',
+            question: q.pregunta || `Pregunta ${i + 1}`,
+            options: q.opciones || [],
+            answer: q.respuesta_correcta || '',
+          })),
+          voice_challenges: generated.retos_de_voz || [],
+        };
+
+        const orderIndex = await Lesson.count({ where: { module_id: module.id } });
+        savedLesson = await Lesson.create({
+          module_id: module.id,
+          tenant_id: academy.id,
+          title: generated.titulo_leccion || tema,
+          subtitle: generated.objetivo ? String(generated.objetivo).slice(0, 200) : null,
+          situation: `Lección generada por IA sobre: ${tema}`,
+          teacher_prompt: generated.prompt_asistente_ia || null,
+          age_range: ageRange,
+          subject: module.subject,
+          content,
+          order_index: orderIndex,
+          icon: ageRange === 'kids' ? '🐶' : '✨',
+          source: 'manual',
+        });
+
+        await module.update({ total_lessons: orderIndex + 1 });
+        CacheService.flush();
+      }
+
+
+      return ApiResponse.success(
+        res,
+        {
+          generated: result.lesson,
+          lesson: savedLesson,
+          provider: result.provider,
+          from_cache: result.fromCache,
+        },
+        savedLesson ? 'Lección generada y guardada.' : 'Lección generada (borrador).',
+        savedLesson ? HTTP_STATUS.CREATED : HTTP_STATUS.OK
+      );
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to generate lesson.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * POST /api/professor/students/:id/progress-report
+   * Analyzes recent conversation sessions and returns a pedagogical report.
+   */
+  async generateProgressReport(req, res) {
+    try {
+      const academy = await requireAcademy(req, res);
+      if (!academy) return;
+
+      const student = await User.findOne({
+        where: { id: req.params.id, tenant_id: academy.id, role: ROLES.STUDENT },
+        attributes: { exclude: ['password'] },
+      });
+      if (!student) return ApiResponse.error(res, 'Student not found.', HTTP_STATUS.NOT_FOUND);
+
+      const sessions = await ConversationSession.findAll({
+        where: { user_id: student.id },
+        order: [['created_at', 'DESC']],
+        limit: 5,
+      });
+
+      const lines = [];
+      sessions.forEach((session) => {
+        (session.messages || []).forEach((m) => {
+          const who = m.role === 'ai' || m.role === 'assistant' ? 'Tutor' : 'Alumno';
+          if (m.text) lines.push(`${who}: ${m.text}`);
+        });
+      });
+
+      if (lines.length < 2) {
+        return ApiResponse.success(res, {
+          report: {
+            fortalezas: 'Todavía no hay conversaciones suficientes con el tutor IA.',
+            oportunidades_mejora: 'Invita al alumno a practicar voz al menos 5 minutos esta semana.',
+            palabras_aprendidas: [],
+            sugerencia_pedagogica: 'Asigna una sesión corta de tutor de voz antes de la próxima clase.',
+          },
+          sessions_analyzed: sessions.length,
+          used_ai: false,
+        }, 'Reporte básico (sin historial de chat).');
+      }
+
+      const edadApprox =
+        student.age_range === 'kids' ? 7 : student.age_range === 'teens' ? 13 : 25;
+
+      const result = await AiService.analyzeStudentProgress({
+        nombreAlumno: student.name,
+        edad: edadApprox,
+        historial: lines.join('\n'),
+      });
+
+      if (result.usedAi) {
+        await incrementAiUsage(req.user.id, result.tokensUsed || 200);
+      }
+
+      return ApiResponse.success(res, {
+        report: result.report,
+        sessions_analyzed: sessions.length,
+        provider: result.provider,
+        used_ai: result.usedAi,
+      }, 'Reporte de progreso generado.');
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to generate progress report.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * GET /api/professor/team
+   * List the professors belonging to this academy (up to 5 professors)
+   */
+  async getTeam(req, res) {
+    try {
+      const academy = await requireAcademy(req, res);
+      if (!academy) return;
+
+      const professors = await User.findAll({
+        where: {
+          tenant_id: academy.id,
+          role: ROLES.PROFESSOR,
+        },
+        attributes: { exclude: ['password'] },
+        order: [['created_at', 'ASC']],
+      });
+
+      const maxProfessors = academy.max_professors || 5;
+      const count = professors.length;
+      const spotsLeft = Math.max(0, maxProfessors - count);
+
+      const team = professors.map((p) => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        role: p.role,
+        is_owner: p.id === academy.owner_id,
+        is_active: p.is_active,
+        created_at: p.created_at,
+        avatar_url: p.avatar_url,
+      }));
+
+      return ApiResponse.success(res, {
+        professors: team,
+        metrics: {
+          total: count,
+          max_professors: maxProfessors,
+          spots_left: spotsLeft,
+          is_academy: academy.type === 'academy' || Boolean(academy.owner_id),
+          type: academy.type || 'academy',
+          can_add: spotsLeft > 0 && (req.user.id === academy.owner_id || req.user.role === ROLES.SUPER_ADMIN || req.user.role === ROLES.TENANT_ADMIN),
+        },
+      }, 'Team retrieved.');
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to retrieve professor team.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * POST /api/professor/team
+   * Adds an additional professor to the academy (max 5)
+   */
+  async addTeamMember(req, res) {
+    try {
+      const academy = await requireAcademy(req, res);
+      if (!academy) return;
+
+      const { name, email, password } = req.body;
+      if (!name || !email || !password) {
+        return ApiResponse.error(res, 'Nombre, correo y contraseña son obligatorios.', HTTP_STATUS.BAD_REQUEST);
+      }
+      if (password.length < 6) {
+        return ApiResponse.error(res, 'La contraseña debe tener al menos 6 caracteres.', HTTP_STATUS.BAD_REQUEST);
+      }
+
+      const maxProfessors = academy.max_professors || 5;
+      const currentCount = await User.count({
+        where: {
+          tenant_id: academy.id,
+          role: ROLES.PROFESSOR,
+        },
+      });
+
+      if (currentCount >= maxProfessors) {
+        return ApiResponse.error(
+          res,
+          `Esta academia ha alcanzado el límite máximo de ${maxProfessors} profesores.`,
+          HTTP_STATUS.FORBIDDEN
+        );
+      }
+
+      const existingUser = await User.findOne({ where: { email: email.trim().toLowerCase() } });
+      if (existingUser) {
+        return ApiResponse.error(res, 'Ya existe una cuenta con este correo electrónico.', HTTP_STATUS.CONFLICT);
+      }
+
+      const newProf = await User.create({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+        role: ROLES.PROFESSOR,
+        tenant_id: academy.id,
+        is_active: true,
+        age_range: 'adults',
+      });
+
+      return ApiResponse.success(
+        res,
+        { professor: newProf.toSafeObject() },
+        'Profesor agregado exitosamente a la academia. Ahora tiene total control para subir lecciones y módulos.',
+        HTTP_STATUS.CREATED
+      );
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to add professor to team.', HTTP_STATUS.INTERNAL_ERROR, error.message);
+    }
+  },
+
+  /**
+   * DELETE /api/professor/team/:id
+   * Remove a professor from the academy team
+   */
+  async removeTeamMember(req, res) {
+    try {
+      const academy = await requireAcademy(req, res);
+      if (!academy) return;
+
+      const { id } = req.params;
+
+      if (id === academy.owner_id) {
+        return ApiResponse.error(res, 'No puedes eliminar al director / propietario de la academia.', HTTP_STATUS.FORBIDDEN);
+      }
+
+      const prof = await User.findOne({
+        where: {
+          id,
+          tenant_id: academy.id,
+          role: ROLES.PROFESSOR,
+        },
+      });
+
+      if (!prof) {
+        return ApiResponse.error(res, 'Profesor no encontrado en esta academia.', HTTP_STATUS.NOT_FOUND);
+      }
+
+      await prof.destroy();
+
+      return ApiResponse.success(res, { id }, 'Profesor removido de la academia exitosamente.');
+    } catch (error) {
+      return ApiResponse.error(res, 'Failed to remove professor.', HTTP_STATUS.INTERNAL_ERROR, error.message);
     }
   },
 };

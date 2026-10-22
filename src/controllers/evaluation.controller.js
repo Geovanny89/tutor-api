@@ -115,8 +115,26 @@ const EvaluationController = {
    */
   async getByModule(req, res) {
     try {
+      let modId = req.params.moduleId;
+
+      const teenSlugMap = {
+        'teen_mod_grammar': '1. Gramática Avanzada para Jóvenes',
+        'teen_mod_skills': '2. Habilidades Comunicativas Juveniles',
+        'teen_mod_practical': '3. Enfoque Práctico y Situaciones Reales',
+      };
+
+      if (teenSlugMap[modId]) {
+        try {
+          const { ensureTeenCurriculum } = require('../services/teenCurriculum');
+          await ensureTeenCurriculum();
+        } catch (_) {}
+
+        const teenMod = await Module.findOne({ where: { name: teenSlugMap[modId], age_range: 'teens' } });
+        if (teenMod) modId = teenMod.id;
+      }
+
       const evaluation = await Evaluation.findOne({
-        where: { module_id: req.params.moduleId, is_published: true },
+        where: { module_id: modId, is_published: true },
         include: [{ model: Module, as: 'module', attributes: ['id', 'level', 'name'] }],
       });
 

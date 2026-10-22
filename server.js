@@ -26,6 +26,7 @@ const adRoutes = require('./src/routes/ad.routes');
 const certificateRoutes = require('./src/routes/certificate.routes');
 
 const app = express();
+app.set('trust proxy', 1); // Necesario para servidores detrás de Nginx / reverse proxy
 const PORT = process.env.PORT || 3001;
 const path = require('path');
 
@@ -121,10 +122,40 @@ async function startServer() {
 
     // Sync models (create tables if they don't exist)
     await sequelize.sync();
+
+    // Ensure new columns exist on tables (safe for both Postgres and SQLite)
+    try {
+      await sequelize.query(`
+        DO $$ BEGIN
+          BEGIN
+            ALTER TABLE tenants ADD COLUMN type VARCHAR(20) DEFAULT 'independent';
+          EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN
+            ALTER TABLE tenants ADD COLUMN max_professors INTEGER DEFAULT 5;
+          EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN
+            ALTER TABLE users ADD COLUMN professor_id UUID;
+          EXCEPTION WHEN duplicate_column THEN END;
+          BEGIN
+            ALTER TABLE modules ADD COLUMN professor_id UUID;
+          EXCEPTION WHEN duplicate_column THEN END;
+        END $$;
+      `);
+    } catch (_) {
+      try { await sequelize.query(`ALTER TABLE tenants ADD COLUMN type VARCHAR(20) DEFAULT 'independent';`); } catch (__) {}
+      try { await sequelize.query(`ALTER TABLE tenants ADD COLUMN max_professors INTEGER DEFAULT 5;`); } catch (__) {}
+      try { await sequelize.query(`ALTER TABLE users ADD COLUMN professor_id UUID;`); } catch (__) {}
+      try { await sequelize.query(`ALTER TABLE modules ADD COLUMN professor_id UUID;`); } catch (__) {}
+    }
+
     console.log('✅ Database models synchronized');
 
     // Ensure super admin exists
     await ensureSuperAdmin();
+
+    // Ensure default teen curriculum modules exist
+    const { ensureTeenCurriculum } = require('./src/services/teenCurriculum');
+    await ensureTeenCurriculum();
 
     // Start HTTP server
     app.listen(PORT, () => {

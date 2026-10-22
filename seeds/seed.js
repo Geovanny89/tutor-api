@@ -13,62 +13,63 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { sequelize, Module, Lesson, Evaluation, User, Tenant, Advertisement } = require('../src/models');
 const { ROLES, LEVELS, TOKENS } = require('../src/config/constants');
+const { ensureTeenCurriculum } = require('../src/services/teenCurriculum');
 
 // 7 anuncios: 1 video promocional (+5 tokens) + 6 videos de relleno (+3 tokens c/u)
 const advertisements = [
-  { 
-    title: 'Aprende inglés con KDice', 
-    description: 'Descubre el método que está cambiando la forma de aprender idiomas.', 
-    kind: 'promo', 
-    reward_tokens: TOKENS.PROMO_REWARD, 
+  {
+    title: 'Aprende inglés con KDice',
+    description: 'Descubre el método que está cambiando la forma de aprender idiomas.',
+    kind: 'promo',
+    reward_tokens: TOKENS.PROMO_REWARD,
     order_index: 0,
     image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=modern%20educational%20platform%20logo%20english%20learning%20kids%20adults%20professional&image_size=landscape_16_9'
   },
-  { 
-    title: 'Libros digitales Kids', 
-    description: 'Cuentos ilustrados para practicar vocabulario desde casa.', 
-    kind: 'extra', 
-    reward_tokens: TOKENS.EXTRA_REWARD, 
+  {
+    title: 'Libros digitales Kids',
+    description: 'Cuentos ilustrados para practicar vocabulario desde casa.',
+    kind: 'extra',
+    reward_tokens: TOKENS.EXTRA_REWARD,
     order_index: 1,
     image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=colorful%20children%20books%20illustration%20english%20learning&image_size=landscape_16_9'
   },
-  { 
-    title: 'Clases en vivo', 
-    description: 'Practica conversación con profesores nativos en grupos pequeños.', 
-    kind: 'extra', 
-    reward_tokens: TOKENS.EXTRA_REWARD, 
+  {
+    title: 'Clases en vivo',
+    description: 'Practica conversación con profesores nativos en grupos pequeños.',
+    kind: 'extra',
+    reward_tokens: TOKENS.EXTRA_REWARD,
     order_index: 2,
     image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=online%20english%20class%20video%20call%20teacher%20students&image_size=landscape_16_9'
   },
-  { 
-    title: 'App de repaso diario', 
-    description: '5 minutos al día para no olvidar lo aprendido.', 
-    kind: 'extra', 
-    reward_tokens: TOKENS.EXTRA_REWARD, 
+  {
+    title: 'App de repaso diario',
+    description: '5 minutos al día para no olvidar lo aprendido.',
+    kind: 'extra',
+    reward_tokens: TOKENS.EXTRA_REWARD,
     order_index: 3,
     image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=smartphone%20app%20learning%20english%20daily%20streak&image_size=landscape_16_9'
   },
-  { 
-    title: 'Certifícate rápido', 
-    description: 'Obtén tu certificado y compártelo con verificación QR.', 
-    kind: 'extra', 
-    reward_tokens: TOKENS.EXTRA_REWARD, 
+  {
+    title: 'Certifícate rápido',
+    description: 'Obtén tu certificado y compártelo con verificación QR.',
+    kind: 'extra',
+    reward_tokens: TOKENS.EXTRA_REWARD,
     order_index: 4,
     image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=professional%20certificate%20diploma%20gold%20seal%20english&image_size=landscape_16_9'
   },
-  { 
-    title: 'Kit de conversación', 
-    description: 'Frases listas para viajar y trabajar en inglés.', 
-    kind: 'extra', 
-    reward_tokens: TOKENS.EXTRA_REWARD, 
+  {
+    title: 'Kit de conversación',
+    description: 'Frases listas para viajar y trabajar en inglés.',
+    kind: 'extra',
+    reward_tokens: TOKENS.EXTRA_REWARD,
     order_index: 5,
     image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=travel%20passport%20suitcase%20business%20meeting%20english%20phrases&image_size=landscape_16_9'
   },
-  { 
-    title: 'Comunidad KDice', 
-    description: 'Únete a miles de estudiantes y practica cada día.', 
-    kind: 'extra', 
-    reward_tokens: TOKENS.EXTRA_REWARD, 
+  {
+    title: 'Comunidad KDice',
+    description: 'Únete a miles de estudiantes y practica cada día.',
+    kind: 'extra',
+    reward_tokens: TOKENS.EXTRA_REWARD,
     order_index: 6,
     image_url: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=diverse%20group%20of%20people%20talking%20learning%20together&image_size=landscape_16_9'
   },
@@ -1548,9 +1549,9 @@ async function seed() {
       // Create Evaluation for each module
       const evalTitle = `Final Evaluation: ${modData.name}`;
       const evalInstructions = `Demonstrate your mastery of the concepts from this module to certify it and advance.`;
-      
+
       let evalQuestions = [];
-      
+
       if (modData.evaluation && modData.evaluation.questions) {
         evalQuestions = modData.evaluation.questions;
       } else {
@@ -1593,13 +1594,13 @@ async function seed() {
     }
 
     // Super Admin
-    const email = process.env.SUPER_ADMIN_EMAIL || 'admin@kdice.com';
+    const email = process.env.SUPER_ADMIN_EMAIL;
     await User.findOrCreate({
       where: { email },
       defaults: {
         name: 'Super Admin',
         email,
-        password: process.env.SUPER_ADMIN_PASSWORD || 'Admin123!',
+        password: process.env.SUPER_ADMIN_PASSWORD,
         role: ROLES.SUPER_ADMIN,
         current_level: LEVELS.C2,
         is_active: true,
@@ -1646,7 +1647,11 @@ async function seed() {
       });
     }
 
-    console.log('\n🎉 Complete 36-Module Curriculum Seeded Successfully!');
+    // Currículo oficial para Jóvenes (Teens)
+    console.log('⚡ Seeding Teens Curriculum (Gramática, Habilidades Comunicativas, Enfoque Práctico)...');
+    await ensureTeenCurriculum();
+
+    console.log('\n🎉 Complete 36-Module Curriculum + Teens Curriculum Seeded Successfully!');
     console.log(`   🏫 Academia por defecto: /academia/${tenant.slug}`);
     console.log(`   🏫 Academia demo:        /academia/${demoAcademy.slug}`);
     console.log(`   👤 Profesor demo:        ${profEmail} / Profe123!`);

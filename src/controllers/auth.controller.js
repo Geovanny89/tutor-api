@@ -14,6 +14,8 @@ const { ROLES, AGE_RANGES, AGE_RANGE_ORDER, HTTP_STATUS } = require('../config/c
  * Handles: register, login, me (get current user), logout
  */
 
+const { slugify, uniqueSlug } = require('../utils/tenantScope');
+
 // ─── Validation Schemas ────────────────────────────────────────────────────────
 const registerSchema = Joi.object({
   name: Joi.string().min(2).max(100).required().messages({
@@ -33,6 +35,10 @@ const registerSchema = Joi.object({
   age_range: Joi.string().valid(...AGE_RANGE_ORDER).optional().allow(null, ''),
   target_level: Joi.string().optional().allow(''),
   native_language: Joi.string().max(10).optional().default('es'),
+  account_type: Joi.string().valid('student', 'independent', 'academy').optional().default('student'),
+  professor_id: Joi.string().optional().allow(null, ''),
+  academy_name: Joi.string().optional().allow('', null),
+  academy_slug: Joi.string().optional().allow('', null),
 }).unknown(true);
 
 const registerAcademySchema = Joi.object({
@@ -45,6 +51,7 @@ const registerAcademySchema = Joi.object({
   name: Joi.string().min(2).max(100).required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(6).max(50).required(),
+  accountType: Joi.string().valid('independent', 'academy').optional().default('academy'),
 });
 
 const loginSchema = Joi.object({
@@ -75,12 +82,52 @@ const AuthController = {
         return ApiResponse.error(res, messages.join('. '), HTTP_STATUS.BAD_REQUEST);
       }
 
-      const { name, email, password, tenant_slug, native_language, age_range } = value;
+      const { name, email, password, tenant_slug, native_language, age_range, account_type } = value;
 
       // Check if email already exists
-      const existingUser = await User.findOne({ where: { email } });
+      const existingUser = await User.findOne({ where: { email: email.trim().toLowerCase() } });
       if (existingUser) {
         return ApiResponse.error(res, 'An account with this email already exists.', HTTP_STATUS.CONFLICT);
+      }
+
+      // If registering as independent professor or academy from main register
+      if (account_type === 'independent' || account_type === 'academy') {
+        const isInd = account_type === 'independent';
+        const rawSlug = value.academy_slug || slugify(value.academy_name || (isInd ? `prof-${name}` : 'academia'));
+        const resolvedSlug = await uniqueSlug(rawSlug);
+
+        const tenant = await Tenant.create({
+          name: value.academy_name || (isInd ? `Espacio de ${name}` : 'Mi Academia'),
+          slug: resolvedSlug,
+          is_active: true,
+          is_public_page_active: true,
+          type: isInd ? 'independent' : 'academy',
+          max_professors: isInd ? 1 : 5,
+          max_students: isInd ? 50 : 100,
+          enabled_age_ranges: ['kids', 'teens', 'adults'],
+        });
+
+        const user = await User.create({
+          name,
+          email: email.trim().toLowerCase(),
+          password,
+          role: ROLES.PROFESSOR,
+          tenant_id: tenant.id,
+          age_range: 'adults',
+          native_language: native_language || 'es',
+        });
+
+        await tenant.update({ owner_id: user.id });
+        const token = generateToken(user);
+
+        return ApiResponse.success(
+          res,
+          { user: user.toSafeObject(), token },
+          isInd
+            ? '¡Cuenta de profesor independiente creada con éxito! Bienvenido a tu panel docente. 🎉'
+            : '¡Academia registrada con éxito! Tu academia tiene capacidad para 5 profesores con control total. 🎉',
+          HTTP_STATUS.CREATED
+        );
       }
 
       // Resolve tenant if slug provided or default to active tenant
@@ -122,10 +169,11 @@ const AuthController = {
 
       const user = await User.create({
         name,
-        email,
+        email: email.trim().toLowerCase(),
         password,
         role: ROLES.STUDENT,
         tenant_id: tenantId,
+        professor_id: value.professor_id || null,
         age_range: resolvedAgeRange,
         native_language,
       });
@@ -145,7 +193,7 @@ const AuthController = {
 
   /**
    * POST /api/auth/register-academy
-   * Register a new academy and its teacher/admin
+   * Register a new academy or independent teacher
    */
   async registerAcademy(req, res) {
     try {
@@ -155,10 +203,11 @@ const AuthController = {
         return ApiResponse.error(res, messages.join('. '), HTTP_STATUS.BAD_REQUEST);
       }
 
-      const { academyName, academySlug, name, email, password } = value;
+      const { academyName, academySlug, name, email, password, accountType = 'academy' } = value;
+      const isIndependent = accountType === 'independent';
 
       // Check if email already exists
-      const existingUser = await User.findOne({ where: { email } });
+      const existingUser = await User.findOne({ where: { email: email.trim().toLowerCase() } });
       if (existingUser) {
         return ApiResponse.error(res, 'An account with this email already exists.', HTTP_STATUS.CONFLICT);
       }
@@ -166,7 +215,7 @@ const AuthController = {
       // Check if slug already exists
       const existingTenant = await Tenant.findOne({ where: { slug: academySlug } });
       if (existingTenant) {
-        return ApiResponse.error(res, 'This academy URL (slug) is already taken.', HTTP_STATUS.CONFLICT);
+        return ApiResponse.error(res, 'This academy URL (slug) is already taken. Please choose another.', HTTP_STATUS.CONFLICT);
       }
 
       // 1. Create Tenant
@@ -175,14 +224,16 @@ const AuthController = {
         slug: academySlug,
         is_active: true,
         is_public_page_active: true,
-        max_students: 50, // Default limit
+        type: isIndependent ? 'independent' : 'academy',
+        max_professors: isIndependent ? 1 : 5,
+        max_students: isIndependent ? 50 : 100,
         enabled_age_ranges: ['kids', 'teens', 'adults'],
       });
 
       // 2. Create User as PROFESSOR
       const user = await User.create({
         name,
-        email,
+        email: email.trim().toLowerCase(),
         password,
         role: ROLES.PROFESSOR,
         tenant_id: tenant.id,
@@ -197,7 +248,9 @@ const AuthController = {
       return ApiResponse.success(
         res,
         { user: user.toSafeObject(), token },
-        'Academy and teacher account created successfully! 🎉',
+        isIndependent
+          ? '¡Cuenta de profesor independiente creada con éxito! Bienvenido al panel docente 🎉'
+          : '¡Academia registrada con éxito! Tu academia tiene capacidad para 5 profesores con control total. 🎉',
         HTTP_STATUS.CREATED
       );
     } catch (error) {

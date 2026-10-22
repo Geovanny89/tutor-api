@@ -21,6 +21,11 @@ const User = sequelize.define('User', {
     allowNull: true,  // null = super_admin (global)
     references: { model: 'tenants', key: 'id' },
   },
+  professor_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'ID del profesor asignado para este alumno (solo ve las clases de este profesor)',
+  },
   name: {
     type: DataTypes.STRING(100),
     allowNull: false,

@@ -77,6 +77,16 @@ const Tenant = sequelize.define('Tenant', {
     type: DataTypes.INTEGER,
     defaultValue: 100,
   },
+  type: {
+    type: DataTypes.STRING(20),
+    defaultValue: 'independent',
+    comment: 'Tipo: independent (profesor independiente) o academy (instituto con hasta 5 profesores)',
+  },
+  max_professors: {
+    type: DataTypes.INTEGER,
+    defaultValue: 5,
+    comment: 'Límite máximo de profesores que pueden formar parte de esta academia (hasta 5)',
+  },
   subscription_expires_at: {
     type: DataTypes.DATE,
     allowNull: true,
